@@ -1,0 +1,31 @@
+{
+  "domain": "downg_scooter",
+  "name": "DownG Scooter",
+  "bluetooth": [
+    {
+      "connectable": true,
+      "local_name": "MIScooter*"
+    },
+    {
+      "connectable": true,
+      "local_name": "MiScooter*"
+    },
+    {
+      "connectable": true,
+      "local_name": "xiaomi.scooter.*"
+    },
+    {
+      "connectable": true,
+      "service_data_uuid": "0000fe95-0000-1000-8000-00805f9b34fb",
+      "service_uuid": "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+    }
+  ],
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/jul-fls/ha-downg-scooter",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/jul-fls/ha-downg-scooter/issues",
+  "version": "0.3.0"
+}

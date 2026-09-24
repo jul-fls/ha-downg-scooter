@@ -1,0 +1,47 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "DownG Scooter",
+        "description": "Add a local Bluetooth scooter. Use only with a scooter you own or are authorized to control.",
+        "data": {
+          "name": "Name",
+          "address": "Bluetooth address",
+          "model_hint": "Model hint"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Discover Xiaomi scooter",
+        "description": "Set up {name} ({address}) as a local Bluetooth scooter?"
+      }
+    },
+    "abort": {
+      "already_configured": "This scooter is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_percent": { "name": "Battery" },
+      "battery_remaining": { "name": "Battery remaining capacity" },
+      "battery_voltage": { "name": "Battery voltage" },
+      "battery_current": { "name": "Battery current" },
+      "battery_temperature": { "name": "Battery temperature" },
+      "battery_cell_min": { "name": "Lowest cell voltage" },
+      "battery_cell_max": { "name": "Highest cell voltage" },
+      "battery_cell_delta": { "name": "Cell voltage delta" },
+      "battery_factory_capacity": { "name": "Battery factory capacity" },
+      "battery_charge_cycles": { "name": "Battery charge cycles" },
+      "speed": { "name": "Speed" },
+      "odometer": { "name": "Odometer" },
+      "scooter_serial": { "name": "Scooter serial" },
+      "battery_serial": { "name": "Battery serial" },
+      "battery_manufacture_date": { "name": "Battery manufacture date" },
+      "drv_version": { "name": "DRV version" },
+      "bms_version": { "name": "BMS version" },
+      "error_code": { "name": "Error code" }
+    },
+    "switch": {
+      "software_lock": { "name": "Software lock" }
+    }
+  }
+}

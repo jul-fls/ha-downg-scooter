@@ -1,0 +1,15 @@
+{
+  "include": [
+    "custom_components/downg_scooter",
+    "tests"
+  ],
+  "exclude": [
+    ".venv"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "strict",
+  "reportIncompatibleVariableOverride": "none",
+  "reportMissingTypeStubs": "none"
+}

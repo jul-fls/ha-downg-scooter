@@ -1,0 +1,9 @@
+bleak==2.0.0
+bleak-retry-connector==4.4.3
+bluetooth-adapters==2.1.0
+bluetooth-data-tools==1.28.4
+cryptography==46.0.5
+habluetooth==5.8.0
+home-assistant-bluetooth==1.13.1
+pyright==1.1.414
+voluptuous==0.16.0

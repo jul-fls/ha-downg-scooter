@@ -1,0 +1,47 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Trottinette Xiaomi",
+        "description": "Ajoutez une trottinette Bluetooth locale que vous possedez ou etes autorise a controler.",
+        "data": {
+          "name": "Nom",
+          "address": "Adresse Bluetooth",
+          "model_hint": "Modele"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Trottinette Xiaomi detectee",
+        "description": "Configurer {name} ({address}) comme trottinette Bluetooth locale ?"
+      }
+    },
+    "abort": {
+      "already_configured": "Cette trottinette est deja configuree."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_percent": { "name": "Batterie" },
+      "battery_remaining": { "name": "Capacite restante" },
+      "battery_voltage": { "name": "Tension de la batterie" },
+      "battery_current": { "name": "Courant de la batterie" },
+      "battery_temperature": { "name": "Temperature de la batterie" },
+      "battery_cell_min": { "name": "Tension de cellule minimale" },
+      "battery_cell_max": { "name": "Tension de cellule maximale" },
+      "battery_cell_delta": { "name": "Ecart de tension des cellules" },
+      "battery_factory_capacity": { "name": "Capacite d'usine" },
+      "battery_charge_cycles": { "name": "Cycles de charge" },
+      "speed": { "name": "Vitesse" },
+      "odometer": { "name": "Kilometrage" },
+      "scooter_serial": { "name": "Numero de serie de la trottinette" },
+      "battery_serial": { "name": "Numero de serie de la batterie" },
+      "battery_manufacture_date": { "name": "Date de fabrication de la batterie" },
+      "drv_version": { "name": "Version DRV" },
+      "bms_version": { "name": "Version BMS" },
+      "error_code": { "name": "Code d'erreur" }
+    },
+    "switch": {
+      "software_lock": { "name": "Verrouillage logiciel" }
+    }
+  }
+}
