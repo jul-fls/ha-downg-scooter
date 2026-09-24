@@ -7,14 +7,19 @@ import logging
 
 from bleak.exc import BleakError
 
-from homeassistant.components import bluetooth
+from homeassistant.components import bluetooth, persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import CONF_ADDRESS, DEFAULT_SCAN_INTERVAL, DOMAIN
-from .protocol import DownGScooterClient, ScooterData, ScooterProtocolError
+from .protocol import (
+    DownGScooterClient,
+    ScooterConfirmationRequired,
+    ScooterData,
+    ScooterProtocolError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +33,9 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         self.name = entry.data[CONF_NAME]
         self.address = entry.data[CONF_ADDRESS]
         self.client = DownGScooterClient(self.address)
+        self._confirmation_notification_id = (
+            f"{DOMAIN}_{entry.entry_id}_confirmation_required"
+        )
 
         super().__init__(
             hass,
@@ -40,7 +48,14 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         """Poll scooter data."""
         try:
             self._resolve_ble_device()
-            return await self.client.read_telemetry()
+            data = await self.client.read_telemetry()
+            persistent_notification.async_dismiss(
+                self.hass, self._confirmation_notification_id
+            )
+            return data
+        except ScooterConfirmationRequired as err:
+            self._notify_confirmation_required()
+            raise UpdateFailed(str(err)) from err
         except (BleakError, ScooterProtocolError) as err:
             raise UpdateFailed(str(err)) from err
         finally:
@@ -51,6 +66,9 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         self._resolve_ble_device()
         try:
             await self.client.set_locked(locked)
+        except ScooterConfirmationRequired:
+            self._notify_confirmation_required()
+            raise
         finally:
             await self.client.disconnect()
         await self.async_request_refresh()
@@ -64,6 +82,23 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
             raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
         self.client.set_device(device)
 
+    def _notify_confirmation_required(self) -> None:
+        """Ask an administrator to confirm the connection on the scooter."""
+        persistent_notification.async_create(
+            self.hass,
+            (
+                f"La connexion Bluetooth a {self.name} doit etre confirmee. "
+                "Allumez la trottinette et appuyez une fois sur son bouton "
+                "d'alimentation lorsqu'elle emet un bip, puis rechargez "
+                "l'integration."
+            ),
+            title="Confirmation requise pour la trottinette",
+            notification_id=self._confirmation_notification_id,
+        )
+
     async def async_shutdown(self) -> None:
         """Close BLE resources."""
+        persistent_notification.async_dismiss(
+            self.hass, self._confirmation_notification_id
+        )
         await self.client.disconnect()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from bleak.exc import BleakError
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -12,6 +13,11 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_NAME
 
 from .const import CONF_ADDRESS, CONF_MODEL_HINT, DEFAULT_NAME, DOMAIN
+from .protocol import (
+    DownGScooterClient,
+    ScooterConfirmationRequired,
+    ScooterProtocolError,
+)
 
 
 class DownGScooterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -42,14 +48,13 @@ class DownGScooterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Confirm a scooter discovered from its BLE advertisement."""
         if user_input is not None:
-            return self.async_create_entry(
-                title=self._discovered_name,
-                data={
-                    CONF_NAME: self._discovered_name,
-                    CONF_ADDRESS: self._discovered_address,
-                    CONF_MODEL_HINT: "",
-                },
-            )
+            try:
+                await self._async_probe_discovered_scooter()
+            except ScooterConfirmationRequired:
+                return await self.async_step_pairing()
+            except (BleakError, ScooterProtocolError):
+                return self.async_abort(reason="cannot_connect")
+            return self._async_create_discovered_entry()
 
         self._set_confirm_only()
         return self.async_show_form(
@@ -57,6 +62,56 @@ class DownGScooterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "name": self._discovered_name,
                 "address": self._discovered_address,
+            },
+        )
+
+    async def async_step_pairing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Wait for optional physical confirmation on the scooter."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                await self._async_probe_discovered_scooter()
+            except ScooterConfirmationRequired:
+                errors["base"] = "confirmation_failed"
+            except (BleakError, ScooterProtocolError):
+                errors["base"] = "cannot_connect"
+            else:
+                return self._async_create_discovered_entry()
+
+        self._set_confirm_only()
+        return self.async_show_form(
+            step_id="pairing",
+            description_placeholders={
+                "name": self._discovered_name,
+                "address": self._discovered_address,
+            },
+            errors=errors,
+        )
+
+    async def _async_probe_discovered_scooter(self) -> None:
+        """Test one register read before creating the config entry."""
+        device = bluetooth.async_ble_device_from_address(
+            self.hass, self._discovered_address, connectable=True
+        )
+        if device is None:
+            raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
+
+        client = DownGScooterClient(device)
+        try:
+            await client.probe()
+        finally:
+            await client.disconnect()
+
+    def _async_create_discovered_entry(self) -> ConfigFlowResult:
+        """Create an entry after a successful Bluetooth probe."""
+        return self.async_create_entry(
+            title=self._discovered_name,
+            data={
+                CONF_NAME: self._discovered_name,
+                CONF_ADDRESS: self._discovered_address,
+                CONF_MODEL_HINT: "",
             },
         )
 

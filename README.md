@@ -41,6 +41,13 @@ supported Bluetooth proxy. When a compatible scooter is switched on, Home
 Assistant automatically proposes it as a discovered device. Manual setup by
 Bluetooth address remains available as a fallback.
 
+Some scooter firmware requires physical confirmation for a new Bluetooth
+client. The setup flow detects a connected but silent scooter and only then asks
+you to submit the step and press the scooter power button once when it beeps. If
+confirmation is required again later, Home Assistant creates one persistent
+administrator notification and removes it automatically after a successful
+refresh.
+
 Discovery uses the scooter's advertised BLE name and service signature, such as
 `MIScooter...` or `xiaomi.scooter...`. Xiaomi scooters commonly use randomized
 BLE addresses, so a manufacturer MAC prefix alone is not reliable.
@@ -83,10 +90,17 @@ must exactly match the manifest version.
 1. Update the manifest version.
 2. Run the local checks above.
 3. Merge the change after CI succeeds.
-4. Create a GitHub release with a matching tag, for example `v0.3.0`.
+4. Create a GitHub release with a matching tag, for example `v0.4.0`.
 
 HACS installs the assets from the GitHub release. Do not create a release tag
 whose version differs from the manifest.
+
+## Branding
+
+The integration includes local Home Assistant brand assets in
+`custom_components/downg_scooter/brand/`: standard and high-resolution icons,
+plus standard and high-resolution landscape logos. Local custom-integration
+branding is supported by Home Assistant 2026.3 and newer.
 
 ## License
 

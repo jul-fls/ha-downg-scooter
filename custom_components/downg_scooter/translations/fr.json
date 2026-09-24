@@ -13,10 +13,19 @@
       "bluetooth_confirm": {
         "title": "Trottinette Xiaomi detectee",
         "description": "Configurer {name} ({address}) comme trottinette Bluetooth locale ?"
+      },
+      "pairing": {
+        "title": "Confirmer sur la trottinette",
+        "description": "{name} est connectee mais ne repond pas. Selectionnez Valider, puis appuyez immediatement une fois sur le bouton d'alimentation de la trottinette lorsqu'elle emet un bip. Faites-le uniquement lorsque cette etape est affichee."
       }
     },
+    "error": {
+      "cannot_connect": "Impossible de communiquer avec la trottinette. Verifiez qu'elle est allumee et a proximite.",
+      "confirmation_failed": "Aucune confirmation recue. Selectionnez Valider et appuyez une fois sur le bouton de la trottinette lorsqu'elle emet un bip."
+    },
     "abort": {
-      "already_configured": "Cette trottinette est deja configuree."
+      "already_configured": "Cette trottinette est deja configuree.",
+      "cannot_connect": "Impossible de communiquer avec la trottinette. Verifiez qu'elle est allumee et a proximite."
     }
   },
   "entity": {

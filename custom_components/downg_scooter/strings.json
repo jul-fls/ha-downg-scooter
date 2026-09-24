@@ -13,10 +13,19 @@
       "bluetooth_confirm": {
         "title": "Discover Xiaomi scooter",
         "description": "Set up {name} ({address}) as a local Bluetooth scooter?"
+      },
+      "pairing": {
+        "title": "Confirm on the scooter",
+        "description": "{name} connected but did not answer. Select Submit, then immediately press the scooter power button once when it beeps. Only do this when this step is shown."
       }
     },
+    "error": {
+      "cannot_connect": "Unable to communicate with the scooter. Make sure it is switched on and nearby.",
+      "confirmation_failed": "No confirmation was received. Select Submit and press the scooter button once when it beeps."
+    },
     "abort": {
-      "already_configured": "This scooter is already configured."
+      "already_configured": "This scooter is already configured.",
+      "cannot_connect": "Unable to communicate with the scooter. Make sure it is switched on and nearby."
     }
   },
   "entity": {

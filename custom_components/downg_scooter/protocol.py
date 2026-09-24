@@ -7,7 +7,9 @@ flashing, tuning, and authentication bypasses are intentionally out of scope.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from dataclasses import dataclass
+import logging
 from typing import Final
 
 from bleak import BleakClient
@@ -32,9 +34,19 @@ REG_BMS_INFO: Final = 0x10
 REG_BMS_RUNTIME: Final = 0x31
 REG_BMS_CELLS: Final = 0x40
 
+CONNECT_SETTLE_SECONDS: Final = 0.35
+REGISTER_READ_ATTEMPTS: Final = 3
+REGISTER_RESPONSE_TIMEOUT: Final = 4
+
+_LOGGER = logging.getLogger(__name__)
+
 
 class ScooterProtocolError(Exception):
     """Raised when the scooter cannot be queried or returns invalid data."""
+
+
+class ScooterConfirmationRequired(ScooterProtocolError):
+    """Raised when the scooter connects but requires physical confirmation."""
 
 
 @dataclass(slots=True)
@@ -84,6 +96,8 @@ class DownGScooterClient:
         self._client: BleakClient | None = None
         self._response_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._rx_buffer = bytearray()
+        self._recent_notifications: deque[bytes] = deque(maxlen=5)
+        self._alternate_protocol_seen = False
         self._request_lock = asyncio.Lock()
         self._static_info: _StaticInfo | None = None
 
@@ -96,6 +110,9 @@ class DownGScooterClient:
         self._client = client
         await client.connect()
         await client.start_notify(NUS_NOTIFY_UUID, self._handle_notify)
+        # Some M365 BLE firmwares acknowledge the CCCD write before their UART
+        # bridge is ready to forward the first command.
+        await asyncio.sleep(CONNECT_SETTLE_SECONDS)
 
     async def disconnect(self) -> None:
         """Disconnect if connected."""
@@ -103,6 +120,8 @@ class DownGScooterClient:
             await self._client.disconnect()
         self._client = None
         self._rx_buffer.clear()
+        self._recent_notifications.clear()
+        self._alternate_protocol_seen = False
 
     def set_device(self, device: BLEDevice | str) -> None:
         """Update the HA-selected local or remote Bluetooth device."""
@@ -166,6 +185,11 @@ class DownGScooterClient:
         async with self._request_lock:
             await self._write(frame)
 
+    async def probe(self) -> None:
+        """Verify that the scooter accepts register reads."""
+        await self.connect()
+        await self._read_register(ADDR_BMS, REG_BMS_RUNTIME, 10)
+
     async def _read_static_info(self) -> _StaticInfo:
         bms = await self._read_register(ADDR_BMS, REG_BMS_INFO, 34)
         esc = await self._read_register(ADDR_ESC, REG_ESC_INFO, 28)
@@ -189,8 +213,26 @@ class DownGScooterClient:
         )
         async with self._request_lock:
             _drain_queue(self._response_queue)
-            await self._write(frame)
-            response = await self._read_response(CMD_READ, register)
+            response: bytes | None = None
+            for attempt in range(1, REGISTER_READ_ATTEMPTS + 1):
+                _LOGGER.debug(
+                    "Reading scooter register 0x%02X, attempt %d/%d: %s",
+                    register,
+                    attempt,
+                    REGISTER_READ_ATTEMPTS,
+                    frame.hex(" "),
+                )
+                await self._write(frame)
+                try:
+                    response = await self._read_response(CMD_READ, register)
+                    break
+                except TimeoutError:
+                    if attempt == REGISTER_READ_ATTEMPTS:
+                        raise self._timeout_error(register) from None
+                    await asyncio.sleep(0.25)
+
+            if response is None:
+                raise self._timeout_error(register)
         payload = _extract_response_payload(response, CMD_READ, register)
         if len(payload) != length:
             raise ScooterProtocolError(
@@ -213,19 +255,46 @@ class DownGScooterClient:
                 if len(frame) >= 6 and frame[4] == command and frame[5] == argument:
                     return frame
 
-        try:
-            return await asyncio.wait_for(wait_for_match(), timeout=8)
-        except asyncio.TimeoutError as err:
-            raise ScooterProtocolError(
-                f"Timed out waiting for register 0x{argument:02X}"
-            ) from err
+        return await asyncio.wait_for(
+            wait_for_match(), timeout=REGISTER_RESPONSE_TIMEOUT
+        )
+
+    def _timeout_diagnostic(self, register: int) -> str:
+        """Describe why a register response could not be matched."""
+        prefix = f"Timed out waiting for register 0x{register:02X}"
+        if self._alternate_protocol_seen:
+            return (
+                f"{prefix}; the scooter sent 5A A5 protocol frames, which are "
+                "not supported yet"
+            )
+        if not self._recent_notifications:
+            return f"{prefix}; no BLE notification was received"
+        recent = " | ".join(data.hex(" ") for data in self._recent_notifications)
+        return f"{prefix}; recent BLE notifications: {recent}"
+
+    def _timeout_error(self, register: int) -> ScooterProtocolError:
+        """Classify a silent connected scooter as awaiting confirmation."""
+        message = self._timeout_diagnostic(register)
+        if not self._recent_notifications:
+            return ScooterConfirmationRequired(message)
+        return ScooterProtocolError(message)
 
     def _handle_notify(self, _sender: object, data: bytearray) -> None:
+        notification = bytes(data)
+        self._recent_notifications.append(notification)
+        _LOGGER.debug("Scooter BLE notification: %s", notification.hex(" "))
         self._rx_buffer.extend(data)
         while True:
             header = self._rx_buffer.find(b"\x55\xaa")
             if header < 0:
-                self._rx_buffer.clear()
+                if b"\x5a\xa5" in self._rx_buffer:
+                    self._alternate_protocol_seen = True
+                # Keep a possible first header byte when 55 AA is split across
+                # two BLE notifications.
+                if self._rx_buffer.endswith(b"\x55"):
+                    self._rx_buffer[:] = b"\x55"
+                else:
+                    self._rx_buffer.clear()
                 return
             if header:
                 del self._rx_buffer[:header]

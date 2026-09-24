@@ -47,6 +47,14 @@ class MetadataTests(unittest.TestCase):
         ]
         expected = catalogs[0]["entity"]
         for catalog in catalogs[1:]:
+            self.assertEqual(
+                catalog["config"]["step"].keys(),
+                catalogs[0]["config"]["step"].keys(),
+            )
+            self.assertEqual(
+                catalog["config"]["error"].keys(),
+                catalogs[0]["config"]["error"].keys(),
+            )
             self.assertEqual(catalog["entity"].keys(), expected.keys())
             for platform, entities in expected.items():
                 self.assertEqual(catalog["entity"][platform].keys(), entities.keys())
