@@ -10,6 +10,17 @@ INTEGRATION = ROOT / "custom_components" / "downg_scooter"
 
 
 class MetadataTests(unittest.TestCase):
+    def test_ci_runs_python_checks_inside_the_virtual_environment(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "run: .venv/bin/python scripts/check_version.py", workflow
+        )
+        self.assertIn(
+            "run: .venv/bin/python -m unittest discover -s tests -v", workflow
+        )
+
     def test_manifest_keys_and_hacs_fields(self) -> None:
         manifest = json.loads(
             (INTEGRATION / "manifest.json").read_text(encoding="utf-8")
