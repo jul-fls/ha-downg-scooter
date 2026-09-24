@@ -14,14 +14,13 @@ The integration is intentionally limited to interoperability:
 
 The protocol implementation was derived from `com.m365downgrade_38.apk`
 (SHA-256 `DF743AC77A4CBEB89FD39A63B420D8596F1DF47A80CEA1B84201A3D58AFA2706`).
-It currently supports the plain Xiaomi `55 AA` protocol used by original
-M365-family firmware.
-
-Newer Xiaomi 1S, Pro 2, Essential, and Mi Scooter firmware may negotiate an
-authenticated or encrypted protocol. That protocol is not implemented yet, so
-compatibility depends on the scooter firmware as well as the commercial model.
-See [the reverse-engineering notes](docs/reverse-engineering.md) for the observed
-registers, commands, and current limitations.
+It supports the plain Xiaomi `55 AA` protocol used by original M365-family
+firmware and the authenticated `5A A5` session used by newer Xiaomi BLE
+firmware. The latter reproduces DownG's legitimate `0x5B`/`0x5C`/`0x5D`
+owner-confirmation handshake; it does not bypass pairing or reuse captured
+keys. Compatibility still depends on the scooter firmware. See
+[the reverse-engineering notes](docs/reverse-engineering.md) for the observed
+registers and commands.
 
 ## Installation with HACS
 
@@ -42,11 +41,11 @@ Assistant automatically proposes it as a discovered device. Manual setup by
 Bluetooth address remains available as a fallback.
 
 Some scooter firmware requires physical confirmation for a new Bluetooth
-client. The setup flow detects a connected but silent scooter and only then asks
-you to submit the step and press the scooter power button once when it beeps. If
-confirmation is required again later, Home Assistant creates one persistent
-administrator notification and removes it automatically after a successful
-refresh.
+session. The setup flow first performs DownG's encrypted negotiation and shows
+the button instruction only after the scooter explicitly answers `0x5C` with
+confirmation status `0`. If confirmation is required again later, Home
+Assistant creates one persistent administrator notification and removes it
+automatically after a successful refresh.
 
 Discovery uses the scooter's advertised BLE name and service signature, such as
 `MIScooter...` or `xiaomi.scooter...`. Xiaomi scooters commonly use randomized
@@ -90,7 +89,7 @@ must exactly match the manifest version.
 1. Update the manifest version.
 2. Run the local checks above.
 3. Merge the change after CI succeeds.
-4. Create a GitHub release with a matching tag, for example `v0.4.0`.
+4. Create a GitHub release with a matching tag, for example `v0.5.0`.
 
 HACS installs the assets from the GitHub release. Do not create a release tag
 whose version differs from the manifest.

@@ -89,8 +89,45 @@ class XiaomiFrameTest(unittest.TestCase):
     def test_missing_notifications_are_reported_in_timeout_diagnostic(self) -> None:
         client = protocol.DownGScooterClient("00:11:22:33:44:55")
         self.assertIn("no BLE notification", client._timeout_diagnostic(0x31))
-        self.assertIsInstance(
+        self.assertIsInstance(client._timeout_error(0x31), protocol.ScooterProtocolError)
+        self.assertNotIsInstance(
             client._timeout_error(0x31), protocol.ScooterConfirmationRequired
+        )
+
+    def test_initial_encrypted_auth_frame_matches_recovered_codec(self) -> None:
+        session = protocol._EncryptedSession(
+            "MIScooter0128", app_nonce=bytes(range(16))
+        )
+        self.assertEqual(
+            session.build_frame(0x21, 0x5B),
+            bytes.fromhex("5A A5 00 A5 9F 50 32 00 00 45 FF 00 00"),
+        )
+
+    def test_encrypted_challenge_updates_nonce_and_session_key(self) -> None:
+        session = protocol._EncryptedSession(
+            "MIScooter0128", app_nonce=bytes(range(16))
+        )
+        challenge = bytes(range(16, 46))
+        decoded = bytes([0x21, 0x3E, 0x5B, 0]) + challenge
+        frame = (
+            b"\x5a\xa5"
+            + bytes([len(challenge)])
+            + protocol._legacy_auth_crypt(decoded, session.key)
+            + protocol._legacy_auth_checksum(decoded)
+            + b"\x00\x00"
+        )
+
+        message = session.decode_frame(frame)
+
+        self.assertEqual(message.command, 0x5B)
+        self.assertEqual(message.payload, challenge)
+        self.assertEqual(session.scooter_nonce, challenge[:16])
+        self.assertEqual(session.completion_payload, challenge[16:])
+        self.assertEqual(
+            session.key,
+            protocol._derive_auth_key(
+                b"MIScooter0128".ljust(16, b"\x00"), challenge[:16]
+            ),
         )
 
     def test_unexpected_notifications_are_not_classified_as_confirmation(self) -> None:

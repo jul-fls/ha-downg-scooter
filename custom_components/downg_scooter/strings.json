@@ -16,12 +16,13 @@
       },
       "pairing": {
         "title": "Confirm on the scooter",
-        "description": "{name} connected but did not answer. Select Submit, then immediately press the scooter power button once when it beeps. Only do this when this step is shown."
+        "description": "{name} explicitly requested physical confirmation and has emitted its authentication beep. Press its power button once now, then select Submit. Submit waits up to 20 seconds if you press it first."
       }
     },
     "error": {
       "cannot_connect": "Unable to communicate with the scooter. Make sure it is switched on and nearby.",
-      "confirmation_failed": "No confirmation was received. Select Submit and press the scooter button once when it beeps."
+      "confirmation_failed": "No confirmation was received. Select Submit and press the scooter button once when it emits the new authentication beep.",
+      "press_button_now": "A new authentication session is ready. Press the scooter button once, then select Submit."
     },
     "abort": {
       "already_configured": "This scooter is already configured.",

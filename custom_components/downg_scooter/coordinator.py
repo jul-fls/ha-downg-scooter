@@ -13,7 +13,14 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import CONF_ADDRESS, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import (
+    CONF_ADDRESS,
+    CONF_PROTOCOL,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    PROTOCOL_ENCRYPTED,
+    PROTOCOL_PLAIN,
+)
 from .protocol import (
     DownGScooterClient,
     ScooterConfirmationRequired,
@@ -32,7 +39,12 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         self.entry = entry
         self.name = entry.data[CONF_NAME]
         self.address = entry.data[CONF_ADDRESS]
-        self.client = DownGScooterClient(self.address)
+        self.protocol = entry.data.get(CONF_PROTOCOL, PROTOCOL_PLAIN)
+        self.client = DownGScooterClient(
+            self.address,
+            scooter_name=self.name,
+            encrypted=self.protocol == PROTOCOL_ENCRYPTED,
+        )
         self._confirmation_notification_id = (
             f"{DOMAIN}_{entry.entry_id}_confirmation_required"
         )
@@ -88,9 +100,9 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
             self.hass,
             (
                 f"La connexion Bluetooth a {self.name} doit etre confirmee. "
-                "Allumez la trottinette et appuyez une fois sur son bouton "
-                "d'alimentation lorsqu'elle emet un bip, puis rechargez "
-                "l'integration."
+                "Rechargez l'integration, puis appuyez une fois sur le bouton "
+                "d'alimentation lorsque la trottinette emet son bip "
+                "d'authentification."
             ),
             title="Confirmation requise pour la trottinette",
             notification_id=self._confirmation_notification_id,

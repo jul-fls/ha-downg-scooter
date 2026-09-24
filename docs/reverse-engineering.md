@@ -43,10 +43,24 @@ DownG's main lock button reads `0xB2`, sends `0x70` when unlocked, and sends
 - lock: `55 AA 04 20 03 70 01 00 67 FF`
 - unlock: `55 AA 04 20 03 71 01 00 66 FF`
 
-## Known limitation
+## Authenticated Xiaomi frame
 
 DownG contains several protocol implementations, selected from Xiaomi BLE
 advertising data: plain `55 AA`, XOR-protected, and authenticated/encrypted
-variants. This integration currently supports only the plain variant. Supporting
-newer scooters safely requires implementing the legitimate owner authentication
-handshake, not replaying keys or bypassing pairing.
+variants. The authenticated transport uses this outer layout:
+
+`5A A5 PAYLOAD_LEN ENCRYPTED_MESSAGE TAG_4 COUNTER_BE`
+
+The session starts with `0x5B`, whose 30-byte response supplies a 16-byte scooter
+nonce and the 14-byte completion proof. The client sends a fresh 16-byte nonce
+with `0x5C`. Status `0` requests the physical power-button confirmation; the
+unsolicited status `1` response confirms it. The client then sends the 14-byte
+proof with `0x5D`.
+
+Session keys are derived with SHA-1 and truncated to 16 bytes. Message payloads
+use the APK's AES block construction, four-byte authentication tag, and
+big-endian message counter. A fresh client nonce is generated for every
+connection. No captured key, static pairing token, or authentication bypass is
+used.
+
+The XOR-protected variants present in the APK remain unsupported.
