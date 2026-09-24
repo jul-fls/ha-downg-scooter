@@ -121,7 +121,7 @@ The repository follows the CI, versioning, documentation, and HACS layout of
 .\scripts\setup_dev.ps1
 .\.venv\Scripts\pyright.exe
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-$env:RELEASE_TAG = "v1.1.0"
+$env:RELEASE_TAG = "v1.1.1"
 .\.venv\Scripts\python.exe scripts\check_version.py
 ```
 

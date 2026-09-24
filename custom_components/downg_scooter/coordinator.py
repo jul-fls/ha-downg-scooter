@@ -23,6 +23,7 @@ from .const import (
     CONNECTED_POLL_INTERVAL,
     DISCONNECTED_RETRY_INTERVAL,
     DOMAIN,
+    MAX_CONSECUTIVE_POLL_FAILURES,
     PROTOCOL_PLAIN,
 )
 from .protocol import (
@@ -52,6 +53,8 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
             token=token,
         )
         self._operation_lock = asyncio.Lock()
+        self._consecutive_poll_failures = 0
+        self._has_successful_data = False
 
         super().__init__(
             hass,
@@ -67,12 +70,29 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
                 if not self.client.is_connected:
                     self._resolve_ble_device()
                 data = await self.client.read_telemetry()
+                self._consecutive_poll_failures = 0
+                self._has_successful_data = True
                 self.update_interval = timedelta(seconds=CONNECTED_POLL_INTERVAL)
                 return data
             except ScooterAuthenticationError as err:
                 await self.client.disconnect()
                 raise ConfigEntryAuthFailed(str(err)) from err
             except (BleakError, ScooterProtocolError) as err:
+                self._consecutive_poll_failures += 1
+                if (
+                    self.client.is_connected
+                    and self._has_successful_data
+                    and self._consecutive_poll_failures < MAX_CONSECUTIVE_POLL_FAILURES
+                ):
+                    self.update_interval = timedelta(seconds=CONNECTED_POLL_INTERVAL)
+                    _LOGGER.warning(
+                        "Transient scooter poll failure %d/%d; keeping the BLE link "
+                        "and previous entity values: %s",
+                        self._consecutive_poll_failures,
+                        MAX_CONSECUTIVE_POLL_FAILURES,
+                        err,
+                    )
+                    return self.data
                 self.update_interval = timedelta(
                     seconds=DISCONNECTED_RETRY_INTERVAL
                 )

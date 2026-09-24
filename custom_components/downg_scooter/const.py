@@ -14,5 +14,6 @@ PROTOCOL_MIAUTH = "mi_auth"
 DEFAULT_NAME = "DownG Scooter"
 CONNECTED_POLL_INTERVAL = 10
 DISCONNECTED_RETRY_INTERVAL = 60
+MAX_CONSECUTIVE_POLL_FAILURES = 3
 
 PLATFORMS = ["binary_sensor", "button", "select", "sensor", "switch"]

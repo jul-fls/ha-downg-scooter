@@ -50,6 +50,7 @@ DISCOVERY_RESPONSE_TIMEOUT: Final = 1.5
 PAIRING_FIRST_TIMEOUT: Final = 3.0
 PAIRING_CONFIRMATION_WINDOW: Final = 5.0
 PAIRING_SECOND_TIMEOUT: Final = 15.0
+CELL_READ_FAILURE_RETRY_INTERVAL: Final = 60.0
 
 TAIL_LIGHT_MODES: Final = {"off": 0, "brake": 1, "always": 2}
 KERS_MODES: Final = {"weak": 0, "medium": 1, "strong": 2}
@@ -132,6 +133,8 @@ class DownGScooterClient:
         self._recent_notifications: deque[bytes] = deque(maxlen=5)
         self._request_lock = asyncio.Lock()
         self._static_registers: dict[str, bytes | None] | None = None
+        self._cached_cells_raw: bytes | None = None
+        self._cells_retry_after = 0.0
 
     async def connect(self) -> None:
         """Connect using bleak-retry-connector and prepare the selected transport."""
@@ -228,15 +231,19 @@ class DownGScooterClient:
         kers = await self._read_optional(ADDR_ESC, REG_KERS, 2)
         bms_status_raw = await self._read_optional(ADDR_BMS, REG_BMS_STATUS, 2)
         bms = await self._read_register(ADDR_BMS, REG_BMS_RUNTIME, 10)
-        cells_raw = await self._read_register(ADDR_BMS, REG_BMS_CELLS, 20)
+        cells_raw = await self._read_cells()
 
         current = _s16le_at(bms, 4) / 100
         voltage = _u16le_at(bms, 6) / 100
         temperatures = (float(bms[8] - 20), float(bms[9] - 20))
-        cells = tuple(
-            round(_u16le_at(cells_raw, offset) / 1000, 3)
-            for offset in range(0, len(cells_raw), 2)
-            if _u16le_at(cells_raw, offset) > 0
+        cells = (
+            tuple(
+                round(_u16le_at(cells_raw, offset) / 1000, 3)
+                for offset in range(0, len(cells_raw), 2)
+                if _u16le_at(cells_raw, offset) > 0
+            )
+            if cells_raw
+            else ()
         )
         status = _u16le_at(bms_status_raw) if bms_status_raw else None
         tail_value = _u16le_at(tail) if tail else None
@@ -343,6 +350,27 @@ class DownGScooterClient:
             await self._uart.start()
         except (MiAuthError, TimeoutError) as err:
             raise ScooterAuthenticationError(str(err)) from err
+
+    async def _read_cells(self) -> bytes | None:
+        """Read cell voltages without dropping a healthy session on one timeout."""
+        now = monotonic()
+        if now < self._cells_retry_after:
+            return self._cached_cells_raw
+
+        cells = await self._read_optional(ADDR_BMS, REG_BMS_CELLS, 20)
+        if cells is None:
+            self._cells_retry_after = now + CELL_READ_FAILURE_RETRY_INTERVAL
+            _LOGGER.warning(
+                "BMS cell register 0x%02X did not respond; retaining the last "
+                "cell values and retrying in %.0f seconds",
+                REG_BMS_CELLS,
+                CELL_READ_FAILURE_RETRY_INTERVAL,
+            )
+            return self._cached_cells_raw
+
+        self._cached_cells_raw = cells
+        self._cells_retry_after = 0.0
+        return cells
 
     async def _read_optional(self, destination: int, register: int, length: int) -> bytes | None:
         try:

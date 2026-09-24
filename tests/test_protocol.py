@@ -159,6 +159,21 @@ class PersistentConnectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(establish.await_count, 2)
         self.assertTrue(client.is_connected)
 
+    async def test_cell_timeout_keeps_cached_values_and_backs_off(self) -> None:
+        client = protocol.DownGScooterClient(object())
+        cells = bytes.fromhex(
+            "ec 0e ee 0e ef 0e f1 0e eb 0e 06 0f 07 0f 0a 0f 07 0f 09 0f"
+        )
+        read_optional = AsyncMock(side_effect=(cells, None))
+
+        with patch.object(client, "_read_optional", read_optional):
+            self.assertEqual(await client._read_cells(), cells)
+            self.assertEqual(await client._read_cells(), cells)
+            self.assertEqual(await client._read_cells(), cells)
+
+        self.assertEqual(read_optional.await_count, 2)
+        self.assertGreater(client._cells_retry_after, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
