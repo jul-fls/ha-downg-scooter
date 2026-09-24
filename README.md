@@ -1,106 +1,125 @@
 # DownG Scooter for Home Assistant
 
-Experimental Home Assistant custom integration for local Bluetooth telemetry and
-software lock control of owner-controlled Xiaomi M365-family scooters.
+Local Home Assistant integration for owner-controlled Xiaomi M365-family
+scooters. Version 1.0 adds the Xiaomi FE95 MiAuth pairing used by recent
+firmware, encrypted `55AB` telemetry, and the controls validated with the
+Windows diagnostic.
 
-The integration is intentionally limited to interoperability:
-
-- read battery, cell, speed, temperature, odometer, serial, and firmware data;
-- expose the Xiaomi software lock as a Home Assistant switch;
-- communicate locally over Bluetooth, without a cloud account;
-- no firmware flashing, speed tuning, exploit logic, or authentication bypass.
+The integration does not flash firmware, tune speed limits, bypass pairing, or
+contact a cloud service.
 
 ## Compatibility
 
-The protocol implementation was derived from `com.m365downgrade_38.apk`
-(SHA-256 `DF743AC77A4CBEB89FD39A63B420D8596F1DF47A80CEA1B84201A3D58AFA2706`).
-It supports the plain Xiaomi `55 AA` protocol used by original M365-family
-firmware and the authenticated `5A A5` session used by newer Xiaomi BLE
-firmware. The latter reproduces DownG's legitimate `0x5B`/`0x5C`/`0x5D`
-owner-confirmation handshake; it does not bypass pairing or reuse captured
-keys. Compatibility still depends on the scooter firmware. See
-[the reverse-engineering notes](docs/reverse-engineering.md) for the observed
-registers and commands.
+Two transports are supported:
+
+- plain Xiaomi `55AA` for older compatible firmware;
+- Xiaomi FE95 MiAuth mode `0x02`, with a persistent pairing token and encrypted
+  `55AB` UART frames.
+
+The MiAuth path has been validated on `MIScooter0128` with DRV `2.5.2` and BMS
+`1.4.1`. Other Xiaomi firmware may expose fewer registers. The reverse
+engineering details are documented in
+[`docs/reverse-engineering.md`](docs/reverse-engineering.md).
 
 ## Installation with HACS
 
-This repository is not in the default HACS catalog yet. Add it as a custom
-repository:
+1. Open HACS and select **Custom repositories**.
+2. Add `https://github.com/jul-fls/ha-downg-scooter` as an **Integration**.
+3. Install **DownG Scooter** and restart Home Assistant.
+4. Switch on the scooter.
+5. Open **Settings > Devices & services** and select the discovered scooter.
 
-1. Open HACS in Home Assistant.
-2. Select the three-dot menu, then **Custom repositories**.
-3. Enter `https://github.com/jul-fls/ha-downg-scooter`.
-4. Select **Integration** as the category and add the repository.
-5. Install **DownG Scooter**, then restart Home Assistant.
-6. Open **Settings > Devices & services > Add integration** and select
-   **DownG Scooter**.
+The repository includes Home Assistant brand assets in
+`custom_components/downg_scooter/brand/`.
 
-The Home Assistant host must have a working Bluetooth adapter, or access to a
-supported Bluetooth proxy. When a compatible scooter is switched on, Home
-Assistant automatically proposes it as a discovered device. Manual setup by
-Bluetooth address remains available as a fallback.
+Discovery matches scooter-specific BLE names such as `MIScooter...` and the
+Xiaomi FE95 plus Nordic UART signature. Home Assistant Bluetooth matchers do
+not support MAC-prefix-only discovery, and Xiaomi devices may randomize their
+address, so the advertised name and service data are the reliable signals.
+The tested `D4:5D:A0` Xiaomi prefix is still accepted naturally when the
+scooter advertises as `MIScooter`.
 
-Some scooter firmware requires physical confirmation for a new Bluetooth
-session. The setup flow first performs DownG's encrypted negotiation and shows
-the button instruction only after the scooter explicitly answers `0x5C` with
-confirmation status `0`. If confirmation is required again later, Home
-Assistant creates one persistent administrator notification and removes it
-automatically after a successful refresh.
+Manual setup only asks for a name and Bluetooth address; there is no model
+field to guess.
 
-Discovery uses the scooter's advertised BLE name and service signature, such as
-`MIScooter...` or `xiaomi.scooter...`. Xiaomi scooters commonly use randomized
-BLE addresses, so a manufacturer MAC prefix alone is not reliable.
+## MiAuth pairing
+
+For a mode `0x02` scooter, Home Assistant shows the physical confirmation step
+before starting it:
+
+1. Select **Submit** once.
+2. Wait about three seconds for the scooter to beep.
+3. Press the scooter power button exactly once, within five seconds.
+4. Wait while Home Assistant reconnects and stores the 12-byte pairing token.
+
+Do not press the button unless this step is visible. A new pairing can replace
+the association used by DownG or another app. If the stored token is later
+rejected, Home Assistant opens its standard reauthentication flow instead of
+repeating a timeout loop.
+
+## Bluetooth proxies
+
+The integration works with a local Bluetooth adapter or a connectable ESPHome
+Bluetooth proxy. Discovery through a proxy does not prove that GATT traffic is
+reliable: place the scooter close to the proxy, keep the proxy current, and
+avoid having the phone connected at the same time. Pairing is timing-sensitive
+and may work more reliably with a local adapter. Normal refreshes reuse one BLE
+connection and one authenticated UART session for all register reads.
+
+Use the included Windows diagnostic to separate scooter/protocol failures from
+proxy failures:
+
+```powershell
+.\scripts\setup_diagnostic.ps1
+.\.diagnostic-venv\Scripts\python.exe scripts\diagnose_scooter.py `
+  --address D4:5D:A0:18:13:8D --name MIScooter0128
+```
+
+Add `--register` for the physical MiAuth registration. Its token is stored in
+the ignored `.diagnostic-data/` directory and is independent from the token in
+the Home Assistant config entry.
 
 ## Entities
 
-The integration creates one device with:
+- charging binary sensor based on BMS status bit 6;
+- battery percentage, capacity, voltage, signed current, signed power, two BMS
+  temperatures, status, charge cycles, and ten individual cell voltages;
+- speed, average speed, odometer, trip distance/time, uptime, estimated range,
+  and controller temperature;
+- scooter and battery serials, manufacture date, DRV/firmware/BMS versions,
+  error, warning, state flags, and work mode;
+- software lock and cruise-control switches;
+- tail-light and regenerative-braking selects;
+- a button that flashes the tail light three times and restores its prior mode.
 
-- a software lock switch;
-- battery percentage, voltage, current, temperature, and capacity sensors;
-- minimum, maximum, and delta cell-voltage sensors;
-- charge-cycle, speed, odometer, serial-number, firmware-version, and error
-  sensors.
+Negative battery current and power indicate charging. The explicit charging
+entity comes from the BMS flag and is therefore preferable for automations.
+The software lock is not a physical anti-theft device.
 
-Data is polled over BLE. The scooter must be powered on and within Bluetooth
-range. Locking is a software command and must not be treated as a physical
-anti-theft device.
+## Development and releases
 
-## Development
-
-The local toolchain follows the same layout as `ha-centoaccess` and requires
-Python 3.13:
+The repository follows the CI, versioning, documentation, and HACS layout of
+`ha-centoaccess`:
 
 ```powershell
 .\scripts\setup_dev.ps1
 .\.venv\Scripts\pyright.exe
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+$env:RELEASE_TAG = "v1.0.0"
 .\.venv\Scripts\python.exe scripts\check_version.py
 ```
 
-CI runs strict Pyright checks, unit tests, manifest-version validation,
-Home Assistant Hassfest, and HACS validation.
+CI runs Pyright, unit tests, version validation, Hassfest, and HACS validation.
+Release tags must exactly match `manifest.json`, using `vX.Y.Z`.
 
-## Releases and versioning
+## Credits
 
-The integration version lives in
-`custom_components/downg_scooter/manifest.json`. Release tags use `vX.Y.Z` and
-must exactly match the manifest version.
-
-1. Update the manifest version.
-2. Run the local checks above.
-3. Merge the change after CI succeeds.
-4. Create a GitHub release with a matching tag, for example `v0.1.3`.
-
-HACS installs the assets from the GitHub release. Do not create a release tag
-whose version differs from the manifest.
-
-## Branding
-
-The integration includes local Home Assistant brand assets in
-`custom_components/downg_scooter/brand/`: standard and high-resolution icons,
-plus standard and high-resolution landscape logos. Local custom-integration
-branding is supported by Home Assistant 2026.3 and newer.
+The interoperability work builds on the DownG APK behavior, the
+[`dnandha/miauth`](https://github.com/dnandha/miauth) MiAuth research, and the
+community Xiaomi scooter protocol documentation. The implementation here is an
+asynchronous Bleak/Home Assistant client written for this integration.
 
 ## License
 
-Licensed under the Apache License 2.0.
+Licensed under the Apache License 2.0. Review upstream license compatibility
+before redistributing MiAuth-derived work under a different license.

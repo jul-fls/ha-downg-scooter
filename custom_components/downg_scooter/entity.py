@@ -21,4 +21,7 @@ class DownGScooterEntity(CoordinatorEntity[DownGScooterCoordinator]):
             identifiers={(DOMAIN, coordinator.address)},
             name=coordinator.name,
             manufacturer="Xiaomi",
+            model="M365 family",
+            serial_number=coordinator.data.scooter_serial,
+            sw_version=coordinator.data.firmware_version or coordinator.data.drv_version,
         )

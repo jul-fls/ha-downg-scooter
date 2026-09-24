@@ -2,28 +2,31 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 import logging
 
 from bleak.exc import BleakError
 
-from homeassistant.components import bluetooth, persistent_notification
+from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     CONF_ADDRESS,
     CONF_PROTOCOL,
+    CONF_TOKEN,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    PROTOCOL_ENCRYPTED,
     PROTOCOL_PLAIN,
 )
 from .protocol import (
     DownGScooterClient,
-    ScooterConfirmationRequired,
+    ScooterAuthenticationError,
     ScooterData,
     ScooterProtocolError,
 )
@@ -32,22 +35,22 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
-    """Fetch scooter telemetry and expose command helpers."""
+    """Fetch scooter telemetry and serialize write commands."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize coordinator."""
         self.entry = entry
         self.name = entry.data[CONF_NAME]
         self.address = entry.data[CONF_ADDRESS]
         self.protocol = entry.data.get(CONF_PROTOCOL, PROTOCOL_PLAIN)
+        token_hex = entry.data.get(CONF_TOKEN)
+        token = bytes.fromhex(token_hex) if token_hex else None
         self.client = DownGScooterClient(
             self.address,
             scooter_name=self.name,
-            encrypted=self.protocol == PROTOCOL_ENCRYPTED,
+            protocol=self.protocol,
+            token=token,
         )
-        self._confirmation_notification_id = (
-            f"{DOMAIN}_{entry.entry_id}_confirmation_required"
-        )
+        self._operation_lock = asyncio.Lock()
 
         super().__init__(
             hass,
@@ -57,39 +60,56 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         )
 
     async def _async_update_data(self) -> ScooterData:
-        """Poll scooter data."""
-        try:
-            self._resolve_ble_device()
-            data = await self.client.read_telemetry()
-            persistent_notification.async_dismiss(
-                self.hass, self._confirmation_notification_id
-            )
-            return data
-        except ScooterConfirmationRequired as err:
-            self._notify_confirmation_required()
-            raise UpdateFailed(str(err)) from err
-        except (BleakError, ScooterProtocolError) as err:
-            raise UpdateFailed(str(err)) from err
-        finally:
-            await self.client.disconnect()
+        """Poll the scooter through the closest HA adapter or proxy."""
+        async with self._operation_lock:
+            try:
+                self._resolve_ble_device()
+                return await self.client.read_telemetry()
+            except ScooterAuthenticationError as err:
+                raise ConfigEntryAuthFailed(str(err)) from err
+            except (BleakError, ScooterProtocolError) as err:
+                raise UpdateFailed(str(err)) from err
+            finally:
+                await self.client.disconnect()
 
     async def async_set_locked(self, locked: bool) -> None:
-        """Set scooter software lock state."""
-        self._resolve_ble_device()
-        try:
-            await self.client.set_locked(locked)
-        except ScooterConfirmationRequired:
-            self._notify_confirmation_required()
-            await self.client.disconnect()
-            raise
-        except (BleakError, ScooterProtocolError):
-            await self.client.disconnect()
-            raise
-        # Reuse the authenticated connection for the immediate state refresh.
+        """Set the software lock."""
+        await self._async_command(lambda: self.client.set_locked(locked))
+
+    async def async_set_cruise(self, enabled: bool) -> None:
+        """Set cruise control."""
+        await self._async_command(lambda: self.client.set_cruise(enabled))
+
+    async def async_set_tail_light(self, mode: str) -> None:
+        """Set rear-light behavior."""
+        await self._async_command(lambda: self.client.set_tail_light(mode))
+
+    async def async_set_kers(self, mode: str) -> None:
+        """Set regenerative braking strength."""
+        await self._async_command(lambda: self.client.set_kers(mode))
+
+    async def async_flash_tail_light(self) -> None:
+        """Flash the rear light three times and restore its mode."""
+        mode = self.data.tail_light_mode
+        if mode is None:
+            raise HomeAssistantError("The current tail-light mode is unavailable")
+        await self._async_command(lambda: self.client.flash_tail_light(mode))
+
+    async def _async_command(self, command: Callable[[], Awaitable[None]]) -> None:
+        async with self._operation_lock:
+            self._resolve_ble_device()
+            try:
+                await command()
+                await asyncio.sleep(0.2)
+            except ScooterAuthenticationError as err:
+                raise ConfigEntryAuthFailed(str(err)) from err
+            except (BleakError, ScooterProtocolError) as err:
+                raise HomeAssistantError(str(err)) from err
+            finally:
+                await self.client.disconnect()
         await self.async_request_refresh()
 
     def _resolve_ble_device(self) -> None:
-        """Select the nearest connectable HA Bluetooth adapter or proxy."""
         device = bluetooth.async_ble_device_from_address(
             self.hass, self.address, connectable=True
         )
@@ -97,23 +117,6 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
             raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
         self.client.set_device(device)
 
-    def _notify_confirmation_required(self) -> None:
-        """Ask an administrator to confirm the connection on the scooter."""
-        persistent_notification.async_create(
-            self.hass,
-            (
-                f"La connexion Bluetooth a {self.name} doit etre confirmee. "
-                "Rechargez l'integration, puis appuyez une fois sur le bouton "
-                "d'alimentation lorsque la trottinette emet son bip "
-                "d'authentification."
-            ),
-            title="Confirmation requise pour la trottinette",
-            notification_id=self._confirmation_notification_id,
-        )
-
     async def async_shutdown(self) -> None:
         """Close BLE resources."""
-        persistent_notification.async_dismiss(
-            self.hass, self._confirmation_notification_id
-        )
         await self.client.disconnect()

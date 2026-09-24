@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from bleak.exc import BleakError
@@ -9,214 +10,228 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.components import bluetooth
-from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.const import CONF_NAME
 
 from .const import (
     CONF_ADDRESS,
-    CONF_MODEL_HINT,
     CONF_PROTOCOL,
+    CONF_TOKEN,
     DEFAULT_NAME,
     DOMAIN,
-    PROTOCOL_ENCRYPTED,
+    PROTOCOL_MIAUTH,
     PROTOCOL_PLAIN,
 )
+from .mi_auth import MiAuthRestartRequired
 from .protocol import (
-    DISCOVERY_RESPONSE_TIMEOUT,
     DownGScooterClient,
-    ScooterConfirmationRequired,
+    PAIRING_CONFIRMATION_WINDOW,
+    PAIRING_FIRST_TIMEOUT,
+    PAIRING_SECOND_TIMEOUT,
     ScooterProtocolError,
+    protocol_mode_from_advertisement,
 )
 
 
 class DownGScooterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for DownG Scooter."""
+    """Configure and pair a Xiaomi scooter."""
 
-    VERSION = 1
-    _discovered_address: str
-    _discovered_name: str
-    _pairing_client: DownGScooterClient | None = None
+    VERSION = 2
+
+    _address: str
+    _name: str
+    _protocol: str
+    _reauth_entry: ConfigEntry | None = None
 
     async def async_step_bluetooth(
         self, discovery_info: bluetooth.BluetoothServiceInfoBleak
     ) -> ConfigFlowResult:
-        """Handle bluetooth discovery."""
-        address = discovery_info.address.strip().upper()
-        await self.async_set_unique_id(address)
+        """Handle a scooter advertisement selected by Home Assistant."""
+        self._address = discovery_info.address.strip().upper()
+        self._name = discovery_info.name or DEFAULT_NAME
+        self._protocol = protocol_mode_from_advertisement(
+            discovery_info.manufacturer_data, discovery_info.service_data
+        )
+        await self.async_set_unique_id(self._address)
         self._abort_if_unique_id_configured()
-
-        self._discovered_address = address
-        self._discovered_name = discovery_info.name or DEFAULT_NAME
         self.context["title_placeholders"] = {
-            "name": self._discovered_name,
-            "address": self._discovered_address,
+            "name": self._name,
+            "address": self._address,
         }
         return await self.async_step_bluetooth_confirm()
 
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Confirm a scooter discovered from its BLE advertisement."""
+        """Confirm an automatically discovered scooter."""
         if user_input is not None:
+            if self._protocol == PROTOCOL_MIAUTH:
+                return await self.async_step_pairing()
             try:
-                await self._async_probe_discovered_scooter()
+                await self._async_probe_plain()
             except (BleakError, ScooterProtocolError):
-                try:
-                    confirmation_required = (
-                        await self._async_begin_encrypted_authentication()
-                    )
-                except (BleakError, ScooterProtocolError):
-                    return self.async_abort(reason="cannot_connect")
-                if confirmation_required:
-                    return await self.async_step_pairing()
-                return await self._async_finish_discovered_entry(
-                    PROTOCOL_ENCRYPTED
-                )
-            return self._async_create_discovered_entry(PROTOCOL_PLAIN)
+                return self.async_abort(reason="cannot_connect")
+            return self._create_entry(token=None)
 
         self._set_confirm_only()
         return self.async_show_form(
             step_id="bluetooth_confirm",
-            description_placeholders={
-                "name": self._discovered_name,
-                "address": self._discovered_address,
-            },
+            description_placeholders={"name": self._name, "address": self._address},
         )
 
     async def async_step_pairing(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Wait for optional physical confirmation on the scooter."""
+        """Pair MiAuth while the user handles the five-second button window."""
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
-                if self._pairing_client is None:
-                    confirmation_required = (
-                        await self._async_begin_encrypted_authentication()
-                    )
-                    if confirmation_required:
-                        errors["base"] = "press_button_now"
-                    else:
-                        return await self._async_finish_discovered_entry(
-                            PROTOCOL_ENCRYPTED
-                        )
-                else:
-                    await self._pairing_client.async_finish_authentication()
-                    await self._pairing_client.probe()
-            except ScooterConfirmationRequired:
-                errors["base"] = "confirmation_failed"
-                await self._async_reset_pairing_client()
+                token = await self._async_pair_miauth()
             except (BleakError, ScooterProtocolError):
-                errors["base"] = "cannot_connect"
-                await self._async_reset_pairing_client()
+                errors["base"] = "pairing_failed"
             else:
-                return await self._async_finish_discovered_entry(
-                    PROTOCOL_ENCRYPTED
-                )
+                if self._reauth_entry is not None:
+                    return self.async_update_reload_and_abort(
+                        self._reauth_entry,
+                        data_updates={
+                            CONF_NAME: self._name,
+                            CONF_ADDRESS: self._address,
+                            CONF_PROTOCOL: PROTOCOL_MIAUTH,
+                            CONF_TOKEN: token.hex(),
+                        },
+                    )
+                return self._create_entry(token=token)
 
         self._set_confirm_only()
         return self.async_show_form(
             step_id="pairing",
-            description_placeholders={
-                "name": self._discovered_name,
-                "address": self._discovered_address,
-            },
+            description_placeholders={"name": self._name, "address": self._address},
             errors=errors,
-        )
-
-    async def _async_probe_discovered_scooter(self) -> None:
-        """Test one register read before creating the config entry."""
-        device = bluetooth.async_ble_device_from_address(
-            self.hass, self._discovered_address, connectable=True
-        )
-        if device is None:
-            raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
-
-        client = DownGScooterClient(device, scooter_name=self._discovered_name)
-        self._pairing_client = client
-        try:
-            await client.probe(attempts=1, timeout=DISCOVERY_RESPONSE_TIMEOUT)
-        except (BleakError, ScooterProtocolError):
-            raise
-        else:
-            await client.disconnect()
-            self._pairing_client = None
-
-    async def _async_begin_encrypted_authentication(self) -> bool:
-        """Negotiate 5AA5 until the scooter reports whether a press is needed."""
-        device = bluetooth.async_ble_device_from_address(
-            self.hass, self._discovered_address, connectable=True
-        )
-        if device is None:
-            raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
-        if self._pairing_client is None:
-            self._pairing_client = DownGScooterClient(
-                device, scooter_name=self._discovered_name, encrypted=True
-            )
-        else:
-            self._pairing_client.set_device(device)
-        try:
-            return await self._pairing_client.async_begin_authentication()
-        except (BleakError, ScooterProtocolError):
-            await self._pairing_client.disconnect()
-            self._pairing_client = None
-            raise
-
-    async def _async_finish_discovered_entry(
-        self, protocol: str
-    ) -> ConfigFlowResult:
-        """Close the setup connection and create the discovered entry."""
-        if self._pairing_client is not None:
-            await self._pairing_client.disconnect()
-            self._pairing_client = None
-        return self._async_create_discovered_entry(protocol)
-
-    async def _async_reset_pairing_client(self) -> None:
-        """Close a failed authentication session before allowing another try."""
-        if self._pairing_client is not None:
-            await self._pairing_client.disconnect()
-            self._pairing_client = None
-
-    def _async_create_discovered_entry(self, protocol: str) -> ConfigFlowResult:
-        """Create an entry after a successful Bluetooth probe."""
-        return self.async_create_entry(
-            title=self._discovered_name,
-            data={
-                CONF_NAME: self._discovered_name,
-                CONF_ADDRESS: self._discovered_address,
-                CONF_MODEL_HINT: "",
-                CONF_PROTOCOL: protocol,
-            },
         )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle manual setup."""
+        """Handle manual setup without asking for a model string."""
         errors: dict[str, str] = {}
-
         if user_input is not None:
-            address = user_input[CONF_ADDRESS].strip().upper()
-            await self.async_set_unique_id(address)
+            self._address = user_input[CONF_ADDRESS].strip().upper()
+            self._name = user_input.get(CONF_NAME) or DEFAULT_NAME
+            await self.async_set_unique_id(self._address)
             self._abort_if_unique_id_configured()
 
-            return self.async_create_entry(
-                title=user_input.get(CONF_NAME) or DEFAULT_NAME,
-                data={
-                    CONF_NAME: user_input.get(CONF_NAME) or DEFAULT_NAME,
-                    CONF_ADDRESS: address,
-                    CONF_MODEL_HINT: user_input.get(CONF_MODEL_HINT, ""),
-                    CONF_PROTOCOL: PROTOCOL_PLAIN,
-                },
+            info = bluetooth.async_last_service_info(
+                self.hass, self._address, connectable=True
             )
+            if info is None:
+                errors["base"] = "cannot_connect"
+            else:
+                self._protocol = protocol_mode_from_advertisement(
+                    info.manufacturer_data, info.service_data
+                )
+                if self._protocol == PROTOCOL_MIAUTH:
+                    return await self.async_step_pairing()
+                try:
+                    await self._async_probe_plain()
+                except (BleakError, ScooterProtocolError):
+                    errors["base"] = "cannot_connect"
+                else:
+                    return self._create_entry(token=None)
 
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Required(CONF_ADDRESS): str,
-                vol.Optional(CONF_MODEL_HINT, default=""): str,
-            }
-        )
         return self.async_show_form(
-            step_id="user", data_schema=data_schema, errors=errors
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
+                    vol.Required(CONF_ADDRESS): str,
+                }
+            ),
+            errors=errors,
         )
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        """Start replacement of a missing or rejected MiAuth token."""
+        entry_id = self.context.get("entry_id")
+        entry = (
+            self.hass.config_entries.async_get_entry(entry_id)
+            if isinstance(entry_id, str)
+            else None
+        )
+        if entry is None:
+            return self.async_abort(reason="reauth_failed")
+        self._reauth_entry = entry
+        self._address = entry_data[CONF_ADDRESS]
+        self._name = entry_data[CONF_NAME]
+        self._protocol = PROTOCOL_MIAUTH
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Explain the physical action before launching re-pairing."""
+        if user_input is not None:
+            return await self.async_step_pairing(user_input)
+        self._set_confirm_only()
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            description_placeholders={"name": self._name, "address": self._address},
+        )
+
+    async def _async_pair_miauth(self) -> bytes:
+        """Run the two-attempt sequence proven by the Windows diagnostic."""
+        device = bluetooth.async_ble_device_from_address(
+            self.hass, self._address, connectable=True
+        )
+        if device is None:
+            raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
+        client = DownGScooterClient(
+            device, scooter_name=self._name, protocol=PROTOCOL_MIAUTH
+        )
+        try:
+            try:
+                return await client.register_miauth(timeout=PAIRING_FIRST_TIMEOUT)
+            except MiAuthRestartRequired:
+                await client.disconnect()
+                await asyncio.sleep(PAIRING_CONFIRMATION_WINDOW)
+                refreshed = bluetooth.async_ble_device_from_address(
+                    self.hass, self._address, connectable=True
+                )
+                if refreshed is None:
+                    raise ScooterProtocolError(
+                        "Scooter disappeared during physical confirmation"
+                    )
+                client.set_device(refreshed)
+                try:
+                    return await client.register_miauth(
+                        timeout=PAIRING_SECOND_TIMEOUT
+                    )
+                except MiAuthRestartRequired as err:
+                    raise ScooterProtocolError(
+                        "Physical confirmation was not accepted"
+                    ) from err
+        finally:
+            await client.disconnect()
+
+    async def _async_probe_plain(self) -> None:
+        device = bluetooth.async_ble_device_from_address(
+            self.hass, self._address, connectable=True
+        )
+        if device is None:
+            raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
+        client = DownGScooterClient(
+            device, scooter_name=self._name, protocol=PROTOCOL_PLAIN
+        )
+        try:
+            await client.probe()
+        finally:
+            await client.disconnect()
+
+    def _create_entry(self, *, token: bytes | None) -> ConfigFlowResult:
+        data: dict[str, Any] = {
+            CONF_NAME: self._name,
+            CONF_ADDRESS: self._address,
+            CONF_PROTOCOL: self._protocol,
+        }
+        if token is not None:
+            data[CONF_TOKEN] = token.hex()
+        return self.async_create_entry(title=self._name, data=data)

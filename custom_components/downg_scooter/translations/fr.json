@@ -1,57 +1,29 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Trottinette Xiaomi",
-        "description": "Ajoutez une trottinette Bluetooth locale que vous possedez ou etes autorise a controler.",
-        "data": {
-          "name": "Nom",
-          "address": "Adresse Bluetooth",
-          "model_hint": "Modele"
-        }
-      },
-      "bluetooth_confirm": {
-        "title": "Trottinette Xiaomi detectee",
-        "description": "Configurer {name} ({address}) comme trottinette Bluetooth locale ?"
-      },
-      "pairing": {
-        "title": "Confirmer sur la trottinette",
-        "description": "{name} a explicitement demande une confirmation physique et vient d'emettre son bip d'authentification. Appuyez maintenant une fois sur son bouton d'alimentation, puis selectionnez Valider. Valider attend jusqu'a 20 secondes si vous cliquez d'abord."
-      }
+      "user": { "title": "Trottinette Xiaomi", "description": "Ajoutez une trottinette Xiaomi que vous possedez ou etes autorise a controler.", "data": { "name": "Nom", "address": "Adresse Bluetooth" } },
+      "bluetooth_confirm": { "title": "Trottinette Xiaomi detectee", "description": "Configurer {name} ({address}) ?" },
+      "pairing": { "title": "Associer la trottinette", "description": "Selectionnez Valider, puis attendez le bip de {name}, environ trois secondes plus tard. Appuyez UNE SEULE FOIS sur son bouton d'alimentation dans les cinq secondes suivant le bip. Home Assistant se reconnectera et terminera automatiquement. N'appuyez que lorsque cette etape est affichee." },
+      "reauth_confirm": { "title": "Associer de nouveau la trottinette", "description": "Le jeton d'association de {name} est absent ou a ete refuse. Selectionnez Valider, attendez environ trois secondes jusqu'au bip, puis appuyez UNE SEULE FOIS sur le bouton dans les cinq secondes. Cette association peut remplacer celle d'une autre application." }
     },
-    "error": {
-      "cannot_connect": "Impossible de communiquer avec la trottinette. Verifiez qu'elle est allumee et a proximite.",
-      "confirmation_failed": "Aucune confirmation recue. Selectionnez Valider et appuyez une fois sur le bouton de la trottinette lorsqu'elle emet le nouveau bip d'authentification.",
-      "press_button_now": "Une nouvelle session d'authentification est prete. Appuyez une fois sur le bouton de la trottinette, puis selectionnez Valider."
-    },
-    "abort": {
-      "already_configured": "Cette trottinette est deja configuree.",
-      "cannot_connect": "Impossible de communiquer avec la trottinette. Verifiez qu'elle est allumee et a proximite."
-    }
+    "error": { "cannot_connect": "Impossible de communiquer avec la trottinette. Verifiez qu'elle est allumee et a proximite.", "pairing_failed": "Echec de l'association. Reessayez et appuyez une seule fois sur le bouton d'alimentation, immediatement apres le bip." },
+    "abort": { "already_configured": "Cette trottinette est deja configuree.", "cannot_connect": "Impossible de communiquer avec la trottinette. Verifiez qu'elle est allumee et a proximite.", "reauth_failed": "L'entree existante de la trottinette est introuvable.", "reauth_successful": "Association terminee avec succes." }
   },
   "entity": {
-    "sensor": {
-      "battery_percent": { "name": "Batterie" },
-      "battery_remaining": { "name": "Capacite restante" },
-      "battery_voltage": { "name": "Tension de la batterie" },
-      "battery_current": { "name": "Courant de la batterie" },
-      "battery_temperature": { "name": "Temperature de la batterie" },
-      "battery_cell_min": { "name": "Tension de cellule minimale" },
-      "battery_cell_max": { "name": "Tension de cellule maximale" },
-      "battery_cell_delta": { "name": "Ecart de tension des cellules" },
-      "battery_factory_capacity": { "name": "Capacite d'usine" },
-      "battery_charge_cycles": { "name": "Cycles de charge" },
-      "speed": { "name": "Vitesse" },
-      "odometer": { "name": "Kilometrage" },
-      "scooter_serial": { "name": "Numero de serie de la trottinette" },
-      "battery_serial": { "name": "Numero de serie de la batterie" },
-      "battery_manufacture_date": { "name": "Date de fabrication de la batterie" },
-      "drv_version": { "name": "Version DRV" },
-      "bms_version": { "name": "Version BMS" },
-      "error_code": { "name": "Code d'erreur" }
+    "binary_sensor": { "charging": { "name": "En charge" } },
+    "button": { "flash_tail_light": { "name": "Faire clignoter le feu arriere" } },
+    "select": {
+      "tail_light_mode": { "name": "Feu arriere", "state": { "off": "Eteint", "brake": "Au freinage", "always": "Toujours allume" } },
+      "kers_mode": { "name": "Freinage regeneratif", "state": { "weak": "Faible", "medium": "Moyen", "strong": "Fort" } }
     },
-    "switch": {
-      "software_lock": { "name": "Verrouillage logiciel" }
-    }
+    "sensor": {
+      "battery_percent": { "name": "Batterie" }, "battery_remaining": { "name": "Capacite restante" }, "battery_voltage": { "name": "Tension de la batterie" }, "battery_current": { "name": "Courant de la batterie" }, "battery_power": { "name": "Puissance de la batterie" },
+      "battery_temperature": { "name": "Temperature de la batterie" }, "battery_temperature_1": { "name": "Temperature batterie 1" }, "battery_temperature_2": { "name": "Temperature batterie 2" }, "battery_status": { "name": "Statut BMS" },
+      "battery_cell_min": { "name": "Tension de cellule minimale" }, "battery_cell_max": { "name": "Tension de cellule maximale" }, "battery_cell_delta": { "name": "Ecart de tension des cellules" },
+      "battery_cell_1": { "name": "Tension cellule 1" }, "battery_cell_2": { "name": "Tension cellule 2" }, "battery_cell_3": { "name": "Tension cellule 3" }, "battery_cell_4": { "name": "Tension cellule 4" }, "battery_cell_5": { "name": "Tension cellule 5" }, "battery_cell_6": { "name": "Tension cellule 6" }, "battery_cell_7": { "name": "Tension cellule 7" }, "battery_cell_8": { "name": "Tension cellule 8" }, "battery_cell_9": { "name": "Tension cellule 9" }, "battery_cell_10": { "name": "Tension cellule 10" },
+      "battery_factory_capacity": { "name": "Capacite d'usine" }, "battery_charge_cycles": { "name": "Cycles de charge" }, "speed": { "name": "Vitesse" }, "average_speed": { "name": "Vitesse moyenne" }, "odometer": { "name": "Kilometrage" }, "trip_distance": { "name": "Distance du trajet" }, "trip_time": { "name": "Duree du trajet" }, "uptime": { "name": "Temps depuis l'allumage" }, "estimated_range": { "name": "Autonomie estimee" }, "controller_temperature": { "name": "Temperature du controleur" },
+      "scooter_serial": { "name": "Numero de serie de la trottinette" }, "battery_serial": { "name": "Numero de serie de la batterie" }, "battery_manufacture_date": { "name": "Date de fabrication de la batterie" }, "firmware_version": { "name": "Version du firmware" }, "drv_version": { "name": "Version DRV" }, "bms_version": { "name": "Version BMS" }, "bms_version_extended": { "name": "Version BMS etendue" }, "error_code": { "name": "Code d'erreur" }, "warning_code": { "name": "Code d'avertissement" }, "state_flags": { "name": "Drapeaux d'etat" }, "work_mode": { "name": "Mode de fonctionnement" }
+    },
+    "switch": { "software_lock": { "name": "Verrouillage logiciel" }, "cruise_control": { "name": "Regulateur de vitesse" } }
   }
 }

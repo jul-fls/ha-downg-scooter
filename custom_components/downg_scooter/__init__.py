@@ -5,7 +5,12 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, PLATFORMS
+from .const import (
+    CONF_PROTOCOL,
+    DOMAIN,
+    PLATFORMS,
+    PROTOCOL_MIAUTH,
+)
 from .coordinator import DownGScooterCoordinator
 
 
@@ -16,6 +21,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate experimental 5AA5 entries to the real MiAuth reauth path."""
+    if entry.version >= 2:
+        return True
+    data = dict(entry.data)
+    if data.get(CONF_PROTOCOL) == "5aa5":
+        data[CONF_PROTOCOL] = PROTOCOL_MIAUTH
+    data.pop("model_hint", None)
+    hass.config_entries.async_update_entry(entry, data=data, version=2)
     return True
 
 

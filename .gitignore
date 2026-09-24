@@ -2,6 +2,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.diagnostic-venv/
+.diagnostic-data/
 .coverage
 .mypy_cache/
 .ruff_cache/

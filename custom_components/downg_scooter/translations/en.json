@@ -1,57 +1,29 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "DownG Scooter",
-        "description": "Add a local Bluetooth scooter. Use only with a scooter you own or are authorized to control.",
-        "data": {
-          "name": "Name",
-          "address": "Bluetooth address",
-          "model_hint": "Model hint"
-        }
-      },
-      "bluetooth_confirm": {
-        "title": "Discover Xiaomi scooter",
-        "description": "Set up {name} ({address}) as a local Bluetooth scooter?"
-      },
-      "pairing": {
-        "title": "Confirm on the scooter",
-        "description": "{name} explicitly requested physical confirmation and has emitted its authentication beep. Press its power button once now, then select Submit. Submit waits up to 20 seconds if you press it first."
-      }
+      "user": { "title": "DownG Scooter", "description": "Add a Xiaomi scooter that you own or are authorized to control.", "data": { "name": "Name", "address": "Bluetooth address" } },
+      "bluetooth_confirm": { "title": "Xiaomi scooter discovered", "description": "Set up {name} ({address})?" },
+      "pairing": { "title": "Pair the scooter", "description": "Select Submit, then wait for {name} to beep after about three seconds. Press its power button ONCE within five seconds of the beep. Home Assistant will reconnect and finish automatically. Only press the button while this step is displayed." },
+      "reauth_confirm": { "title": "Pair the scooter again", "description": "The pairing token for {name} is missing or was rejected. Select Submit, wait about three seconds for the beep, then press the power button ONCE within five seconds. This may replace the pairing used by another app." }
     },
-    "error": {
-      "cannot_connect": "Unable to communicate with the scooter. Make sure it is switched on and nearby.",
-      "confirmation_failed": "No confirmation was received. Select Submit and press the scooter button once when it emits the new authentication beep.",
-      "press_button_now": "A new authentication session is ready. Press the scooter button once, then select Submit."
-    },
-    "abort": {
-      "already_configured": "This scooter is already configured.",
-      "cannot_connect": "Unable to communicate with the scooter. Make sure it is switched on and nearby."
-    }
+    "error": { "cannot_connect": "Unable to communicate with the scooter. Make sure it is switched on and nearby.", "pairing_failed": "Pairing failed. Try again and press the power button once, immediately after the beep." },
+    "abort": { "already_configured": "This scooter is already configured.", "cannot_connect": "Unable to communicate with the scooter. Make sure it is switched on and nearby.", "reauth_failed": "The existing scooter entry could not be found.", "reauth_successful": "Pairing completed successfully." }
   },
   "entity": {
-    "sensor": {
-      "battery_percent": { "name": "Battery" },
-      "battery_remaining": { "name": "Battery remaining capacity" },
-      "battery_voltage": { "name": "Battery voltage" },
-      "battery_current": { "name": "Battery current" },
-      "battery_temperature": { "name": "Battery temperature" },
-      "battery_cell_min": { "name": "Lowest cell voltage" },
-      "battery_cell_max": { "name": "Highest cell voltage" },
-      "battery_cell_delta": { "name": "Cell voltage delta" },
-      "battery_factory_capacity": { "name": "Battery factory capacity" },
-      "battery_charge_cycles": { "name": "Battery charge cycles" },
-      "speed": { "name": "Speed" },
-      "odometer": { "name": "Odometer" },
-      "scooter_serial": { "name": "Scooter serial" },
-      "battery_serial": { "name": "Battery serial" },
-      "battery_manufacture_date": { "name": "Battery manufacture date" },
-      "drv_version": { "name": "DRV version" },
-      "bms_version": { "name": "BMS version" },
-      "error_code": { "name": "Error code" }
+    "binary_sensor": { "charging": { "name": "Charging" } },
+    "button": { "flash_tail_light": { "name": "Flash tail light" } },
+    "select": {
+      "tail_light_mode": { "name": "Tail light", "state": { "off": "Off", "brake": "While braking", "always": "Always on" } },
+      "kers_mode": { "name": "Regenerative braking", "state": { "weak": "Weak", "medium": "Medium", "strong": "Strong" } }
     },
-    "switch": {
-      "software_lock": { "name": "Software lock" }
-    }
+    "sensor": {
+      "battery_percent": { "name": "Battery" }, "battery_remaining": { "name": "Remaining capacity" }, "battery_voltage": { "name": "Battery voltage" }, "battery_current": { "name": "Battery current" }, "battery_power": { "name": "Battery power" },
+      "battery_temperature": { "name": "Battery temperature" }, "battery_temperature_1": { "name": "Battery temperature 1" }, "battery_temperature_2": { "name": "Battery temperature 2" }, "battery_status": { "name": "BMS status" },
+      "battery_cell_min": { "name": "Lowest cell voltage" }, "battery_cell_max": { "name": "Highest cell voltage" }, "battery_cell_delta": { "name": "Cell voltage delta" },
+      "battery_cell_1": { "name": "Cell 1 voltage" }, "battery_cell_2": { "name": "Cell 2 voltage" }, "battery_cell_3": { "name": "Cell 3 voltage" }, "battery_cell_4": { "name": "Cell 4 voltage" }, "battery_cell_5": { "name": "Cell 5 voltage" }, "battery_cell_6": { "name": "Cell 6 voltage" }, "battery_cell_7": { "name": "Cell 7 voltage" }, "battery_cell_8": { "name": "Cell 8 voltage" }, "battery_cell_9": { "name": "Cell 9 voltage" }, "battery_cell_10": { "name": "Cell 10 voltage" },
+      "battery_factory_capacity": { "name": "Factory capacity" }, "battery_charge_cycles": { "name": "Charge cycles" }, "speed": { "name": "Speed" }, "average_speed": { "name": "Average speed" }, "odometer": { "name": "Odometer" }, "trip_distance": { "name": "Trip distance" }, "trip_time": { "name": "Trip time" }, "uptime": { "name": "Uptime" }, "estimated_range": { "name": "Estimated range" }, "controller_temperature": { "name": "Controller temperature" },
+      "scooter_serial": { "name": "Scooter serial" }, "battery_serial": { "name": "Battery serial" }, "battery_manufacture_date": { "name": "Battery manufacture date" }, "firmware_version": { "name": "Firmware version" }, "drv_version": { "name": "DRV version" }, "bms_version": { "name": "BMS version" }, "bms_version_extended": { "name": "Extended BMS version" }, "error_code": { "name": "Error code" }, "warning_code": { "name": "Warning code" }, "state_flags": { "name": "State flags" }, "work_mode": { "name": "Work mode" }
+    },
+    "switch": { "software_lock": { "name": "Software lock" }, "cruise_control": { "name": "Cruise control" } }
   }
 }
