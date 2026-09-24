@@ -80,9 +80,12 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
             await self.client.set_locked(locked)
         except ScooterConfirmationRequired:
             self._notify_confirmation_required()
-            raise
-        finally:
             await self.client.disconnect()
+            raise
+        except (BleakError, ScooterProtocolError):
+            await self.client.disconnect()
+            raise
+        # Reuse the authenticated connection for the immediate state refresh.
         await self.async_request_refresh()
 
     def _resolve_ble_device(self) -> None:

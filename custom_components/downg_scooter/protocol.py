@@ -12,10 +12,12 @@ from dataclasses import dataclass
 import hashlib
 import logging
 import secrets
+from time import monotonic
 from typing import Final, TypeVar
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
+from bleak_retry_connector import establish_connection
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 NUS_SERVICE_UUID: Final = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -40,6 +42,7 @@ REG_BMS_CELLS: Final = 0x40
 CONNECT_SETTLE_SECONDS: Final = 0.35
 REGISTER_READ_ATTEMPTS: Final = 3
 REGISTER_RESPONSE_TIMEOUT: Final = 4
+DISCOVERY_RESPONSE_TIMEOUT: Final = 1.5
 AUTH_RESPONSE_TIMEOUT: Final = 5
 AUTH_CONFIRMATION_TIMEOUT: Final = 20
 
@@ -229,13 +232,29 @@ class DownGScooterClient:
         if self._client and self._client.is_connected:
             return
 
-        client = BleakClient(self._device, timeout=15)
+        started = monotonic()
+        if isinstance(self._device, str):
+            raise ScooterProtocolError(
+                "A discovered BLE device is required before connecting"
+            )
+        client = await establish_connection(
+            BleakClient,
+            self._device,
+            self._scooter_name,
+            max_attempts=3,
+        )
+        try:
+            await client.start_notify(NUS_NOTIFY_UUID, self._handle_notify)
+        except Exception:
+            await client.disconnect()
+            raise
         self._client = client
-        await client.connect()
-        await client.start_notify(NUS_NOTIFY_UUID, self._handle_notify)
         # Some M365 BLE firmwares acknowledge the CCCD write before their UART
         # bridge is ready to forward the first command.
         await asyncio.sleep(CONNECT_SETTLE_SECONDS)
+        _LOGGER.debug(
+            "Scooter BLE connection ready in %.2fs", monotonic() - started
+        )
 
     async def disconnect(self) -> None:
         """Disconnect if connected."""
@@ -253,6 +272,7 @@ class DownGScooterClient:
 
     async def read_telemetry(self) -> ScooterData:
         """Read the registers used by DownG for M365-family scooters."""
+        started = monotonic()
         await self.connect()
         await self._ensure_authenticated()
 
@@ -271,7 +291,7 @@ class DownGScooterClient:
         ]
         temp_values = [value - 20 for value in bms[8:10]]
 
-        return ScooterData(
+        data = ScooterData(
             battery_percent=_u16le_at(bms, 2),
             battery_remaining_mah=_u16le_at(bms, 0),
             battery_current_a=round(_s16le_at(bms, 4) / 100, 2),
@@ -296,6 +316,8 @@ class DownGScooterClient:
             odometer_km=round(_u32le_at(runtime, 14) / 1000, 3),
             locked=bool(_u16le_at(runtime, 4) & 0x02),
         )
+        _LOGGER.debug("Scooter telemetry read in %.2fs", monotonic() - started)
+        return data
 
     async def set_locked(self, locked: bool) -> None:
         """Set the Xiaomi software lock using DownG's DRV registers."""
@@ -308,10 +330,21 @@ class DownGScooterClient:
         async with self._request_lock:
             await self._write(frame)
 
-    async def probe(self) -> None:
+    async def probe(
+        self,
+        *,
+        attempts: int = REGISTER_READ_ATTEMPTS,
+        timeout: float = REGISTER_RESPONSE_TIMEOUT,
+    ) -> None:
         """Verify that the scooter accepts register reads."""
         await self.connect()
-        await self._read_register(ADDR_BMS, REG_BMS_RUNTIME, 10)
+        await self._read_register(
+            ADDR_BMS,
+            REG_BMS_RUNTIME,
+            10,
+            attempts=attempts,
+            timeout=timeout,
+        )
 
     async def async_begin_authentication(self) -> bool:
         """Start DownG authentication and report whether a button press is needed."""
@@ -413,11 +446,19 @@ class DownGScooterClient:
             scooter_serial=_decode_serial(esc[0:14]),
         )
 
-    async def _read_register(self, destination: int, register: int, length: int) -> bytes:
+    async def _read_register(
+        self,
+        destination: int,
+        register: int,
+        length: int,
+        *,
+        attempts: int = REGISTER_READ_ATTEMPTS,
+        timeout: float = REGISTER_RESPONSE_TIMEOUT,
+    ) -> bytes:
         async with self._request_lock:
             _drain_queue(self._response_queue)
             response: bytes | None = None
-            for attempt in range(1, REGISTER_READ_ATTEMPTS + 1):
+            for attempt in range(1, attempts + 1):
                 frame = self._build_frame(
                     destination, CMD_READ, register, bytes([length])
                 )
@@ -425,21 +466,23 @@ class DownGScooterClient:
                     "Reading scooter register 0x%02X, attempt %d/%d: %s",
                     register,
                     attempt,
-                    REGISTER_READ_ATTEMPTS,
+                    attempts,
                     frame.hex(" "),
                 )
                 await self._write(frame)
                 try:
                     if self._encrypted_session is None:
-                        response = await self._read_response(CMD_READ, register)
+                        response = await self._read_response(
+                            CMD_READ, register, timeout=timeout
+                        )
                     else:
                         encrypted_response = await self._read_encrypted_response(
-                            CMD_READ, status=register
+                            CMD_READ, status=register, timeout=timeout
                         )
                         response = encrypted_response.payload
                     break
                 except TimeoutError:
-                    if attempt == REGISTER_READ_ATTEMPTS:
+                    if attempt == attempts:
                         raise self._timeout_error(register) from None
                     await asyncio.sleep(0.25)
 
@@ -479,16 +522,16 @@ class DownGScooterClient:
                 NUS_WRITE_UUID, frame[offset : offset + 20], response=False
             )
 
-    async def _read_response(self, command: int, argument: int) -> bytes:
+    async def _read_response(
+        self, command: int, argument: int, *, timeout: float = REGISTER_RESPONSE_TIMEOUT
+    ) -> bytes:
         async def wait_for_match() -> bytes:
             while True:
                 frame = await self._response_queue.get()
                 if len(frame) >= 6 and frame[4] == command and frame[5] == argument:
                     return frame
 
-        return await asyncio.wait_for(
-            wait_for_match(), timeout=REGISTER_RESPONSE_TIMEOUT
-        )
+        return await asyncio.wait_for(wait_for_match(), timeout=timeout)
 
     async def _read_encrypted_response(
         self,

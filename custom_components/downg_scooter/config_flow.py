@@ -22,6 +22,7 @@ from .const import (
     PROTOCOL_PLAIN,
 )
 from .protocol import (
+    DISCOVERY_RESPONSE_TIMEOUT,
     DownGScooterClient,
     ScooterConfirmationRequired,
     ScooterProtocolError,
@@ -132,10 +133,14 @@ class DownGScooterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
 
         client = DownGScooterClient(device, scooter_name=self._discovered_name)
+        self._pairing_client = client
         try:
-            await client.probe()
-        finally:
+            await client.probe(attempts=1, timeout=DISCOVERY_RESPONSE_TIMEOUT)
+        except (BleakError, ScooterProtocolError):
+            raise
+        else:
             await client.disconnect()
+            self._pairing_client = None
 
     async def _async_begin_encrypted_authentication(self) -> bool:
         """Negotiate 5AA5 until the scooter reports whether a press is needed."""
@@ -144,11 +149,12 @@ class DownGScooterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         if device is None:
             raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
-        if self._pairing_client is not None:
-            await self._pairing_client.disconnect()
-        self._pairing_client = DownGScooterClient(
-            device, scooter_name=self._discovered_name, encrypted=True
-        )
+        if self._pairing_client is None:
+            self._pairing_client = DownGScooterClient(
+                device, scooter_name=self._discovered_name, encrypted=True
+            )
+        else:
+            self._pairing_client.set_device(device)
         try:
             return await self._pairing_client.async_begin_authentication()
         except (BleakError, ScooterProtocolError):

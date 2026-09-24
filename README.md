@@ -89,7 +89,7 @@ must exactly match the manifest version.
 1. Update the manifest version.
 2. Run the local checks above.
 3. Merge the change after CI succeeds.
-4. Create a GitHub release with a matching tag, for example `v0.5.0`.
+4. Create a GitHub release with a matching tag, for example `v0.1.3`.
 
 HACS installs the assets from the GitHub release. Do not create a release tag
 whose version differs from the manifest.
