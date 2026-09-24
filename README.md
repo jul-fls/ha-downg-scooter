@@ -1,9 +1,9 @@
 # DownG Scooter for Home Assistant
 
 Local Home Assistant integration for owner-controlled Xiaomi M365-family
-scooters. Version 1.0 adds the Xiaomi FE95 MiAuth pairing used by recent
-firmware, encrypted `55AB` telemetry, and the controls validated with the
-Windows diagnostic.
+scooters. It supports Xiaomi FE95 MiAuth pairing, encrypted `55AB` telemetry,
+and the controls validated with the Windows diagnostic. Version 1.1 keeps the
+authenticated BLE link active and adds adaptive 10-second/60-second polling.
 
 The integration does not flash firmware, tune speed limits, bypass pairing, or
 contact a cloud service.
@@ -63,8 +63,12 @@ The integration works with a local Bluetooth adapter or a connectable ESPHome
 Bluetooth proxy. Discovery through a proxy does not prove that GATT traffic is
 reliable: place the scooter close to the proxy, keep the proxy current, and
 avoid having the phone connected at the same time. Pairing is timing-sensitive
-and may work more reliably with a local adapter. Normal refreshes reuse one BLE
-connection and one authenticated UART session for all register reads.
+and may work more reliably with a local adapter.
+
+Once connected, the integration keeps the GATT and authenticated UART sessions
+open and polls all live telemetry and setting registers every 10 seconds. If
+the link is lost, it releases the dead session and retries once per minute.
+After a successful reconnection, polling automatically returns to 10 seconds.
 
 Use the included Windows diagnostic to separate scooter/protocol failures from
 proxy failures:
@@ -96,6 +100,18 @@ Negative battery current and power indicate charging. The explicit charging
 entity comes from the BMS flag and is therefore preferable for automations.
 The software lock is not a physical anti-theft device.
 
+Cell voltages, minimum/maximum cell voltage, battery voltage, and current ask
+Home Assistant to display two decimal places. Their underlying states retain
+the precision supplied by the scooter.
+
+The odometer is declared as a distance sensor with state class
+`total_increasing`. Home Assistant therefore generates hourly long-term
+statistics suitable for weekly, monthly, and yearly mileage calculations.
+Recorder may still purge raw state history according to the instance-wide
+`purge_keep_days` setting; integrations cannot override that global policy for
+one entity. Long-term statistics are stored separately from that rolling raw
+history.
+
 ## Development and releases
 
 The repository follows the CI, versioning, documentation, and HACS layout of
@@ -105,7 +121,7 @@ The repository follows the CI, versioning, documentation, and HACS layout of
 .\scripts\setup_dev.ps1
 .\.venv\Scripts\pyright.exe
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-$env:RELEASE_TAG = "v1.0.0"
+$env:RELEASE_TAG = "v1.1.0"
 .\.venv\Scripts\python.exe scripts\check_version.py
 ```
 

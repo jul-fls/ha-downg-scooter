@@ -8,6 +8,7 @@ import sys
 from types import ModuleType
 from typing import Any
 import unittest
+from unittest.mock import AsyncMock, patch
 
 
 ROOT = Path(__file__).parents[1] / "custom_components" / "downg_scooter"
@@ -100,6 +101,10 @@ class AdvertisementModeTest(unittest.TestCase):
             protocol.protocol_mode_from_advertisement({}, {}), PROTOCOL_PLAIN
         )
 
+    def test_connected_and_disconnected_intervals(self) -> None:
+        self.assertEqual(const.CONNECTED_POLL_INTERVAL, 10)
+        self.assertEqual(const.DISCONNECTED_RETRY_INTERVAL, 60)
+
 
 class BmsStatusTest(unittest.TestCase):
     def test_real_charger_status_is_charging(self) -> None:
@@ -107,6 +112,52 @@ class BmsStatusTest(unittest.TestCase):
 
     def test_real_unplugged_status_is_not_charging(self) -> None:
         self.assertFalse(protocol.is_bms_charging(0x0003))
+
+
+class PersistentConnectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_connect_reuses_an_active_gatt_link(self) -> None:
+        class FakeBleakClient:
+            is_connected = True
+
+            async def start_notify(self, _uuid: str, _callback: Any) -> None:
+                return None
+
+            async def disconnect(self) -> None:
+                self.is_connected = False
+
+        bleak_client = FakeBleakClient()
+        establish = AsyncMock(return_value=bleak_client)
+        client = protocol.DownGScooterClient(object())
+
+        with patch.object(protocol, "establish_connection", establish):
+            await client.connect()
+            await client.connect()
+
+        self.assertEqual(establish.await_count, 1)
+
+    async def test_dead_gatt_link_is_replaced(self) -> None:
+        class FakeBleakClient:
+            def __init__(self) -> None:
+                self.is_connected = True
+
+            async def start_notify(self, _uuid: str, _callback: Any) -> None:
+                return None
+
+            async def disconnect(self) -> None:
+                self.is_connected = False
+
+        first = FakeBleakClient()
+        second = FakeBleakClient()
+        establish = AsyncMock(side_effect=(first, second))
+        client = protocol.DownGScooterClient(object())
+
+        with patch.object(protocol, "establish_connection", establish):
+            await client.connect()
+            first.is_connected = False
+            await client.connect()
+
+        self.assertEqual(establish.await_count, 2)
+        self.assertTrue(client.is_connected)
 
 
 if __name__ == "__main__":

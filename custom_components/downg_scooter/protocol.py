@@ -137,6 +137,12 @@ class DownGScooterClient:
         """Connect using bleak-retry-connector and prepare the selected transport."""
         if self._client and self._client.is_connected:
             return
+        if self._client is not None:
+            self._client = None
+            self._uart = None
+            self._rx_buffer.clear()
+            self._recent_notifications.clear()
+            _drain_queue(self._response_queue)
         if isinstance(self._device, str):
             raise ScooterProtocolError("A discovered BLE device is required before connecting")
 
@@ -168,6 +174,11 @@ class DownGScooterClient:
     def set_device(self, device: BLEDevice | str) -> None:
         """Update the HA-selected local adapter or Bluetooth proxy device."""
         self._device = device
+
+    @property
+    def is_connected(self) -> bool:
+        """Return whether the underlying GATT connection is still active."""
+        return self._client is not None and self._client.is_connected
 
     async def register_miauth(self, *, timeout: float) -> bytes:
         """Perform one MiAuth registration attempt."""
@@ -337,6 +348,8 @@ class DownGScooterClient:
         try:
             return await self._read_register(destination, register, length)
         except ScooterProtocolError as err:
+            if not self.is_connected:
+                raise
             _LOGGER.debug("Optional register 0x%02X unavailable: %s", register, err)
             return None
 

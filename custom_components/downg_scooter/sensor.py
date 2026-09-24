@@ -45,6 +45,7 @@ def _sensor(
     device_class: SensorDeviceClass | None = None,
     native_unit_of_measurement: str | None = None,
     state_class: SensorStateClass | None = None,
+    suggested_display_precision: int | None = None,
 ) -> DownGSensorDescription:
     return DownGSensorDescription(
         key=key,
@@ -53,21 +54,22 @@ def _sensor(
         device_class=device_class,
         native_unit_of_measurement=native_unit_of_measurement,
         state_class=state_class,
+        suggested_display_precision=suggested_display_precision,
     )
 
 
 SENSORS: tuple[DownGSensorDescription, ...] = (
     _sensor("battery_percent", lambda d: d.battery_percent, device_class=SensorDeviceClass.BATTERY, native_unit_of_measurement=PERCENTAGE, state_class=SensorStateClass.MEASUREMENT),
     _sensor("battery_remaining", lambda d: d.battery_remaining_mah, native_unit_of_measurement="mAh", state_class=SensorStateClass.MEASUREMENT),
-    _sensor("battery_voltage", lambda d: d.battery_voltage_v, device_class=SensorDeviceClass.VOLTAGE, native_unit_of_measurement=UnitOfElectricPotential.VOLT, state_class=SensorStateClass.MEASUREMENT),
-    _sensor("battery_current", lambda d: d.battery_current_a, device_class=SensorDeviceClass.CURRENT, native_unit_of_measurement=UnitOfElectricCurrent.AMPERE, state_class=SensorStateClass.MEASUREMENT),
+    _sensor("battery_voltage", lambda d: d.battery_voltage_v, device_class=SensorDeviceClass.VOLTAGE, native_unit_of_measurement=UnitOfElectricPotential.VOLT, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2),
+    _sensor("battery_current", lambda d: d.battery_current_a, device_class=SensorDeviceClass.CURRENT, native_unit_of_measurement=UnitOfElectricCurrent.AMPERE, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2),
     _sensor("battery_power", lambda d: d.battery_power_w, device_class=SensorDeviceClass.POWER, native_unit_of_measurement=UnitOfPower.WATT, state_class=SensorStateClass.MEASUREMENT),
     _sensor("battery_temperature", lambda d: d.battery_temperature_c, device_class=SensorDeviceClass.TEMPERATURE, native_unit_of_measurement=UnitOfTemperature.CELSIUS, state_class=SensorStateClass.MEASUREMENT),
     _sensor("battery_temperature_1", lambda d: d.battery_temperature_1_c, device_class=SensorDeviceClass.TEMPERATURE, native_unit_of_measurement=UnitOfTemperature.CELSIUS, state_class=SensorStateClass.MEASUREMENT),
     _sensor("battery_temperature_2", lambda d: d.battery_temperature_2_c, device_class=SensorDeviceClass.TEMPERATURE, native_unit_of_measurement=UnitOfTemperature.CELSIUS, state_class=SensorStateClass.MEASUREMENT),
     _sensor("battery_status", lambda d: f"0x{d.battery_status:04X}" if d.battery_status is not None else None),
-    _sensor("battery_cell_min", lambda d: d.battery_cell_min_v, device_class=SensorDeviceClass.VOLTAGE, native_unit_of_measurement=UnitOfElectricPotential.VOLT, state_class=SensorStateClass.MEASUREMENT),
-    _sensor("battery_cell_max", lambda d: d.battery_cell_max_v, device_class=SensorDeviceClass.VOLTAGE, native_unit_of_measurement=UnitOfElectricPotential.VOLT, state_class=SensorStateClass.MEASUREMENT),
+    _sensor("battery_cell_min", lambda d: d.battery_cell_min_v, device_class=SensorDeviceClass.VOLTAGE, native_unit_of_measurement=UnitOfElectricPotential.VOLT, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2),
+    _sensor("battery_cell_max", lambda d: d.battery_cell_max_v, device_class=SensorDeviceClass.VOLTAGE, native_unit_of_measurement=UnitOfElectricPotential.VOLT, state_class=SensorStateClass.MEASUREMENT, suggested_display_precision=2),
     _sensor("battery_cell_delta", lambda d: d.battery_cell_delta_mv, native_unit_of_measurement="mV", state_class=SensorStateClass.MEASUREMENT),
     *tuple(
         _sensor(
@@ -76,6 +78,7 @@ SENSORS: tuple[DownGSensorDescription, ...] = (
             device_class=SensorDeviceClass.VOLTAGE,
             native_unit_of_measurement=UnitOfElectricPotential.VOLT,
             state_class=SensorStateClass.MEASUREMENT,
+            suggested_display_precision=2,
         )
         for index in range(1, 11)
     ),

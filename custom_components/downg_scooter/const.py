@@ -12,6 +12,7 @@ PROTOCOL_PLAIN = "55aa"
 PROTOCOL_MIAUTH = "mi_auth"
 
 DEFAULT_NAME = "DownG Scooter"
-DEFAULT_SCAN_INTERVAL = 30
+CONNECTED_POLL_INTERVAL = 10
+DISCONNECTED_RETRY_INTERVAL = 60
 
 PLATFORMS = ["binary_sensor", "button", "select", "sensor", "switch"]

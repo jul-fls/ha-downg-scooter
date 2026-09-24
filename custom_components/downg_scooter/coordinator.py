@@ -20,7 +20,8 @@ from .const import (
     CONF_ADDRESS,
     CONF_PROTOCOL,
     CONF_TOKEN,
-    DEFAULT_SCAN_INTERVAL,
+    CONNECTED_POLL_INTERVAL,
+    DISCONNECTED_RETRY_INTERVAL,
     DOMAIN,
     PROTOCOL_PLAIN,
 )
@@ -56,21 +57,27 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            update_interval=timedelta(seconds=CONNECTED_POLL_INTERVAL),
         )
 
     async def _async_update_data(self) -> ScooterData:
         """Poll the scooter through the closest HA adapter or proxy."""
         async with self._operation_lock:
             try:
-                self._resolve_ble_device()
-                return await self.client.read_telemetry()
+                if not self.client.is_connected:
+                    self._resolve_ble_device()
+                data = await self.client.read_telemetry()
+                self.update_interval = timedelta(seconds=CONNECTED_POLL_INTERVAL)
+                return data
             except ScooterAuthenticationError as err:
+                await self.client.disconnect()
                 raise ConfigEntryAuthFailed(str(err)) from err
             except (BleakError, ScooterProtocolError) as err:
-                raise UpdateFailed(str(err)) from err
-            finally:
+                self.update_interval = timedelta(
+                    seconds=DISCONNECTED_RETRY_INTERVAL
+                )
                 await self.client.disconnect()
+                raise UpdateFailed(str(err)) from err
 
     async def async_set_locked(self, locked: bool) -> None:
         """Set the software lock."""
@@ -97,16 +104,20 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
 
     async def _async_command(self, command: Callable[[], Awaitable[None]]) -> None:
         async with self._operation_lock:
-            self._resolve_ble_device()
             try:
+                if not self.client.is_connected:
+                    self._resolve_ble_device()
                 await command()
                 await asyncio.sleep(0.2)
             except ScooterAuthenticationError as err:
+                await self.client.disconnect()
                 raise ConfigEntryAuthFailed(str(err)) from err
             except (BleakError, ScooterProtocolError) as err:
-                raise HomeAssistantError(str(err)) from err
-            finally:
+                self.update_interval = timedelta(
+                    seconds=DISCONNECTED_RETRY_INTERVAL
+                )
                 await self.client.disconnect()
+                raise HomeAssistantError(str(err)) from err
         await self.async_request_refresh()
 
     def _resolve_ble_device(self) -> None:

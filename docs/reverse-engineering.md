@@ -42,7 +42,9 @@ application and device AES keys/IV prefixes.
 
 Authenticated UART uses `55 AB`, a little-endian packet counter, AES-CCM with a
 four-byte tag, four random padding bytes, and the Xiaomi checksum. All register
-reads in one Home Assistant refresh share a single login and UART session.
+reads share a single login and UART session. Home Assistant keeps that session
+active while the scooter remains reachable, polls every 10 seconds, and drops
+to one reconnection attempt per minute after a link failure.
 
 This is not the unrelated `5A A5` flow initially inferred from other DownG
 classes. Hardware testing established FE95 MiAuth as the correct transport for
