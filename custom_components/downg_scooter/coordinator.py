@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 import logging
+from time import monotonic
 
 from bleak.exc import BleakError
 
@@ -69,6 +70,7 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
 
     async def _async_update_data(self) -> ScooterData:
         """Poll the scooter through the closest HA adapter or proxy."""
+        started = monotonic()
         async with self._operation_lock:
             try:
                 if not self.client.is_connected:
@@ -97,9 +99,7 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
                         err,
                     )
                     return self.data
-                self.update_interval = timedelta(
-                    seconds=DISCONNECTED_RETRY_INTERVAL
-                )
+                self._schedule_disconnected_retry(started)
                 await self.client.disconnect()
                 raise UpdateFailed(str(err)) from err
 
@@ -151,6 +151,12 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         if device is None:
             raise ScooterProtocolError("Scooter is not reachable over Bluetooth")
         self.client.set_device(device)
+
+    def _schedule_disconnected_retry(self, started: float) -> None:
+        """Keep failed connection attempts no more than one minute apart."""
+        elapsed = monotonic() - started
+        delay = max(1.0, DISCONNECTED_RETRY_INTERVAL - elapsed)
+        self.update_interval = timedelta(seconds=delay)
 
     async def async_shutdown(self) -> None:
         """Close BLE resources."""

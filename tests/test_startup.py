@@ -59,3 +59,24 @@ class StartupTests(unittest.TestCase):
                 for node in assignments
             )
         )
+
+    def test_reauth_unloads_live_entry_before_pairing(self) -> None:
+        source = (
+            ROOT / "custom_components/downg_scooter/config_flow.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        reauth = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            for node in node.body
+            if isinstance(node, ast.AsyncFunctionDef)
+            and node.name == "async_step_reauth"
+        )
+        called_methods = {
+            node.func.attr
+            for node in ast.walk(reauth)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+
+        self.assertIn("async_unload", called_methods)

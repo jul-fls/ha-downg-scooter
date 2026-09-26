@@ -28,7 +28,7 @@ def _load(name: str) -> Any:
 
 
 const = _load("const")
-_load("mi_auth")
+mi_auth = _load("mi_auth")
 protocol = _load("protocol")
 PROTOCOL_MIAUTH = const.PROTOCOL_MIAUTH
 PROTOCOL_PLAIN = const.PROTOCOL_PLAIN
@@ -115,6 +115,33 @@ class BmsStatusTest(unittest.TestCase):
 
 
 class PersistentConnectionTest(unittest.IsolatedAsyncioTestCase):
+    async def test_transient_miauth_timeout_does_not_invalidate_token(self) -> None:
+        client = protocol.DownGScooterClient(
+            object(), protocol=PROTOCOL_MIAUTH, token=b"1" * 12
+        )
+        client._client = object()
+
+        with patch.object(protocol, "mi_login", AsyncMock(side_effect=TimeoutError)):
+            with self.assertRaises(protocol.ScooterProtocolError) as raised:
+                await client._ensure_transport()
+
+        self.assertNotIsInstance(raised.exception, protocol.ScooterAuthenticationError)
+        self.assertIn("Transient MiAuth", str(raised.exception))
+
+    async def test_explicit_miauth_rejection_invalidates_token(self) -> None:
+        client = protocol.DownGScooterClient(
+            object(), protocol=PROTOCOL_MIAUTH, token=b"1" * 12
+        )
+        client._client = object()
+
+        with patch.object(
+            protocol,
+            "mi_login",
+            AsyncMock(side_effect=mi_auth.MiAuthTokenRejected("rejected")),
+        ):
+            with self.assertRaises(protocol.ScooterAuthenticationError):
+                await client._ensure_transport()
+
     async def test_connect_reuses_an_active_gatt_link(self) -> None:
         class FakeBleakClient:
             is_connected = True

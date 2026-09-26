@@ -51,6 +51,10 @@ class MiAuthError(Exception):
     """Raised when Xiaomi MiAuth rejects or times out."""
 
 
+class MiAuthTokenRejected(MiAuthError):
+    """Raised only when the scooter proves that the stored token is invalid."""
+
+
 class MiAuthConfirmationRequired(MiAuthError):
     """Raised when final registration is rejected by the scooter."""
 
@@ -285,7 +289,9 @@ async def _login(transport: MiAuthTransport, token: bytes) -> SessionKeys:
         device_key, inverse_salt, hashlib.sha256
     ).digest()
     if not hmac.compare_digest(device_confirmation, expected_confirmation):
-        raise MiAuthError("Scooter login confirmation does not match the token")
+        raise MiAuthTokenRejected(
+            "Scooter login confirmation does not match the stored token"
+        )
 
     application_confirmation = hmac.new(
         application_key, salt, hashlib.sha256
@@ -294,7 +300,7 @@ async def _login(transport: MiAuthTransport, token: bytes) -> SessionKeys:
     await transport.write_parcel(application_confirmation)
     result = await transport.next_control()
     if result == LOGIN_ERROR:
-        raise MiAuthError("Scooter rejected the stored MiAuth token")
+        raise MiAuthTokenRejected("Scooter rejected the stored MiAuth token")
     if result != LOGIN_OK:
         raise MiAuthError(f"Unexpected login result: {result.hex(' ')}")
     return SessionKeys(

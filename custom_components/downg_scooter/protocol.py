@@ -14,7 +14,13 @@ from bleak.backends.device import BLEDevice
 from bleak_retry_connector import establish_connection
 
 from .const import PROTOCOL_MIAUTH, PROTOCOL_PLAIN
-from .mi_auth import MiAuthError, MiAuthRestartRequired, MiUartClient, MiUartSession
+from .mi_auth import (
+    MiAuthError,
+    MiAuthRestartRequired,
+    MiAuthTokenRejected,
+    MiUartClient,
+    MiUartSession,
+)
 from .mi_auth import login as mi_login
 from .mi_auth import register as mi_register
 
@@ -348,8 +354,13 @@ class DownGScooterClient:
             keys = await mi_login(self._client, self._token)
             self._uart = MiUartClient(self._client, MiUartSession(keys))
             await self._uart.start()
-        except (MiAuthError, TimeoutError) as err:
+        except MiAuthTokenRejected as err:
             raise ScooterAuthenticationError(str(err)) from err
+        except (MiAuthError, TimeoutError) as err:
+            detail = str(err) or type(err).__name__
+            raise ScooterProtocolError(
+                f"Transient MiAuth transport failure: {detail}"
+            ) from err
 
     async def _read_cells(self) -> bytes | None:
         """Read cell voltages without dropping a healthy session on one timeout."""

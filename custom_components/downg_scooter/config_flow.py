@@ -163,6 +163,10 @@ class DownGScooterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._address = entry_data[CONF_ADDRESS]
         self._name = entry_data[CONF_NAME]
         self._protocol = PROTOCOL_MIAUTH
+        # A real token rejection starts a second BLE client for registration.
+        # Unload the live coordinator first so both clients cannot fight over
+        # the scooter and repeatedly tear down each other's GATT connection.
+        await self.hass.config_entries.async_unload(entry.entry_id)
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
