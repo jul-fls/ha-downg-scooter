@@ -506,6 +506,99 @@ async def _apply_commands(
             print(f"KERS : {_u16(kers)} (0=faible, 1=moyen, 2=fort)")
 
 
+async def _test_keep_awake(
+    uart: mi_auth.MiUartClient,
+    snapshot: dict[str, bytes | None],
+    *,
+    duration_minutes: float,
+) -> None:
+    """Test whether an idempotent setting write resets the scooter idle timer."""
+    if duration_minutes <= 0:
+        raise mi_auth.MiAuthError("La duree du test doit etre superieure a zero")
+
+    bms_status = snapshot["bms_status"]
+    if bms_status is not None and _u16(bms_status) & (1 << 6):
+        raise mi_auth.MiAuthError(
+            "Le chargeur est detecte. Debranchez-le pour que le test "
+            "d'extinction automatique soit concluant."
+        )
+
+    tail = snapshot["tail"]
+    if tail is None:
+        tail = await uart.read_register(0x20, 0x7D, 2, timeout=2.0)
+    expected_tail = _u16(tail)
+    if expected_tail not in (0, 1, 2):
+        raise mi_auth.MiAuthError(
+            f"Mode de feu arriere inattendu: {expected_tail}; test annule"
+        )
+
+    interval_seconds = 60.0
+    duration_seconds = duration_minutes * 60.0
+    started = monotonic()
+    next_write = started + interval_seconds
+    writes = 0
+    print(
+        "\n=== TEST KEEP-AWAKE EXPERIMENTAL ===\n"
+        f"Duree                       : {duration_minutes:g} min\n"
+        "Intervalle                  : 60 s\n"
+        f"Paquet                       : WRITE 0x20/0x7D = {expected_tail}\n"
+        "Securite                     : annulation si la trottinette roule, "
+        "si le reglage change ou si une reponse manque\n"
+        "Ne branchez pas le chargeur pendant le test. Ctrl+C pour arreter."
+    )
+
+    while True:
+        remaining = next_write - monotonic()
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+        elapsed = monotonic() - started
+        if elapsed > duration_seconds + 0.5:
+            break
+
+        runtime = await uart.read_register(0x20, 0xB0, 32, timeout=2.0)
+        speed_kmh = _s16(runtime, 10) / 1000
+        if abs(speed_kmh) > 0.05:
+            raise mi_auth.MiAuthError(
+                f"Trottinette en mouvement ({speed_kmh:.2f} km/h); test annule"
+            )
+
+        current_tail = await uart.read_register(0x20, 0x7D, 2, timeout=2.0)
+        if _u16(current_tail) != expected_tail:
+            raise mi_auth.MiAuthError(
+                "Le mode du feu arriere a change pendant le test; aucune "
+                "ecriture ne sera effectuee"
+            )
+
+        await uart.write_register(0x20, 0x7D, tail)
+        verified_tail = await uart.read_register(0x20, 0x7D, 2, timeout=2.0)
+        if _u16(verified_tail) != expected_tail:
+            raise mi_auth.MiAuthError(
+                "La verification du feu arriere ne correspond pas; test annule"
+            )
+
+        writes += 1
+        uptime = _u16(runtime, 20)
+        print(
+            f"[keep-awake] +{elapsed / 60:.1f} min: ecriture {writes} OK, "
+            f"uptime={uptime}s, vitesse={speed_kmh:.2f} km/h"
+        )
+        next_write += interval_seconds
+        if next_write - started > duration_seconds + 0.5:
+            break
+
+    runtime = await uart.read_register(0x20, 0xB0, 32, timeout=2.0)
+    elapsed = monotonic() - started
+    print(
+        f"[succes] Session encore active apres {elapsed / 60:.1f} min et "
+        f"{writes} ecriture(s) idempotente(s). Uptime={_u16(runtime, 20)}s."
+    )
+    if duration_minutes < 6:
+        print(
+            "[attention] Test inferieur a 6 minutes: il ne valide pas encore "
+            "le franchissement du delai d'extinction observe."
+        )
+
+
 async def _test_mi_auth(
     client: protocol.DownGScooterClient,
     *,
@@ -553,13 +646,20 @@ async def _test_mi_auth(
     try:
         snapshot = await _read_full_snapshot(uart)
         await _apply_commands(uart, args, snapshot)
+        if args.test_keep_awake is not None:
+            await _test_keep_awake(
+                uart,
+                snapshot,
+                duration_minutes=args.test_keep_awake,
+            )
     finally:
         await uart.stop()
 
     print(
         "\n[commandes] Disponibles: --lock, --unlock, "
         "--tail-light off|brake|always, --flash-tail-light [N], "
-        "--cruise on|off, --kers weak|medium|strong"
+        "--cruise on|off, --kers weak|medium|strong, "
+        "--test-keep-awake [MINUTES]"
     )
 
 
@@ -699,6 +799,18 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cruise", choices=("on", "off"))
     parser.add_argument("--kers", choices=("weak", "medium", "strong"))
+    parser.add_argument(
+        "--test-keep-awake",
+        nargs="?",
+        const=8.0,
+        type=float,
+        metavar="MINUTES",
+        help=(
+            "Teste pendant 8 minutes par defaut une reecriture idempotente "
+            "du mode actuel du feu arriere toutes les 60 secondes. Le "
+            "chargeur doit etre debranche."
+        ),
+    )
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 

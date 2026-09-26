@@ -24,6 +24,8 @@ from .const import (
     CONNECTED_POLL_INTERVAL,
     DISCONNECTED_RETRY_INTERVAL,
     DOMAIN,
+    KEEP_AWAKE_INTERVAL,
+    KEEP_AWAKE_MAX_SPEED_KMH,
     MAX_CONSECUTIVE_POLL_FAILURES,
     PROTOCOL_PLAIN,
 )
@@ -56,6 +58,7 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         self._operation_lock = asyncio.Lock()
         self._consecutive_poll_failures = 0
         self._has_successful_data = False
+        self._last_keep_awake = 0.0
 
         super().__init__(
             hass,
@@ -76,6 +79,7 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
                 if not self.client.is_connected:
                     self._resolve_ble_device()
                 data = await self.client.read_telemetry()
+                await self._async_keep_awake_if_due(data)
                 self._consecutive_poll_failures = 0
                 self._has_successful_data = True
                 self.update_interval = timedelta(seconds=CONNECTED_POLL_INTERVAL)
@@ -102,6 +106,23 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
                 self._schedule_disconnected_retry(started)
                 await self.client.disconnect()
                 raise UpdateFailed(str(err)) from err
+
+    async def _async_keep_awake_if_due(self, data: ScooterData) -> None:
+        """Pulse the tail light once per minute while the scooter is parked."""
+        now = monotonic()
+        if now - self._last_keep_awake < KEEP_AWAKE_INTERVAL:
+            return
+        if data.tail_light_mode is None:
+            return
+        if (
+            data.speed_kmh is not None
+            and data.speed_kmh > KEEP_AWAKE_MAX_SPEED_KMH
+        ):
+            return
+
+        await self.client.flash_tail_light(data.tail_light_mode, count=1)
+        self._last_keep_awake = monotonic()
+        _LOGGER.debug("Sent parked scooter keep-awake tail-light pulse")
 
     async def async_set_locked(self, locked: bool) -> None:
         """Set the software lock."""
