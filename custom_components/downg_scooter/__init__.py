@@ -17,7 +17,11 @@ from .coordinator import DownGScooterCoordinator
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up DownG Scooter from a config entry."""
     coordinator = DownGScooterCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
+    # Do not use async_config_entry_first_refresh here. When the scooter is off,
+    # Home Assistant turns that failure into an exponentially increasing config
+    # entry retry delay. Keeping the coordinator loaded preserves our own fixed
+    # 60-second reconnect cadence instead.
+    await coordinator.async_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

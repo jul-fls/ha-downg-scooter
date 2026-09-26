@@ -100,6 +100,12 @@ Negative battery current and power indicate charging. The explicit charging
 entity comes from the BMS flag and is therefore preferable for automations.
 The software lock is not a physical anti-theft device.
 
+The integration keeps the BLE connection open and polls every 10 seconds while
+the scooter is reachable. If Home Assistant starts while the scooter or its
+Bluetooth proxy is unavailable, the config entry still loads with unavailable
+entities and retries locally every 60 seconds. This avoids Home Assistant's
+exponential setup backoff, which can otherwise grow to several minutes.
+
 Cell voltages, minimum/maximum cell voltage, battery voltage, and current ask
 Home Assistant to display two decimal places. Their underlying states retain
 the precision supplied by the scooter.
@@ -121,7 +127,7 @@ The repository follows the CI, versioning, documentation, and HACS layout of
 .\scripts\setup_dev.ps1
 .\.venv\Scripts\pyright.exe
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-$env:RELEASE_TAG = "v1.1.1"
+$env:RELEASE_TAG = "v1.1.2"
 .\.venv\Scripts\python.exe scripts\check_version.py
 ```
 

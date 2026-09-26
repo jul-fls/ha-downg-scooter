@@ -62,6 +62,10 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
             name=DOMAIN,
             update_interval=timedelta(seconds=CONNECTED_POLL_INTERVAL),
         )
+        # Let the config entry and its entities load while the scooter is off.
+        # A failed best-effort refresh will mark them unavailable and switch the
+        # coordinator to the fixed disconnected retry interval.
+        self.data = ScooterData()
 
     async def _async_update_data(self) -> ScooterData:
         """Poll the scooter through the closest HA adapter or proxy."""
