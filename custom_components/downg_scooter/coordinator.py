@@ -21,11 +21,10 @@ from .const import (
     CONF_ADDRESS,
     CONF_PROTOCOL,
     CONF_TOKEN,
+    CONNECTION_CYCLE_INTERVAL,
     CONNECTED_POLL_INTERVAL,
     DISCONNECTED_RETRY_INTERVAL,
     DOMAIN,
-    KEEP_AWAKE_INTERVAL,
-    KEEP_AWAKE_MAX_SPEED_KMH,
     MAX_CONSECUTIVE_POLL_FAILURES,
     PROTOCOL_PLAIN,
 )
@@ -37,6 +36,10 @@ from .protocol import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class ScooterConnectionCycleError(Exception):
+    """Raised when the deliberate BLE reconnection does not complete."""
 
 
 class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
@@ -58,7 +61,7 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         self._operation_lock = asyncio.Lock()
         self._consecutive_poll_failures = 0
         self._has_successful_data = False
-        self._last_keep_awake = 0.0
+        self._last_connection_cycle = 0.0
 
         super().__init__(
             hass,
@@ -76,10 +79,11 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
         started = monotonic()
         async with self._operation_lock:
             try:
-                if not self.client.is_connected:
+                connection_was_active = self.client.is_connected
+                if not connection_was_active:
                     self._resolve_ble_device()
                 data = await self.client.read_telemetry()
-                await self._async_keep_awake_if_due(data)
+                await self._async_cycle_connection_if_due(connection_was_active)
                 self._consecutive_poll_failures = 0
                 self._has_successful_data = True
                 self.update_interval = timedelta(seconds=CONNECTED_POLL_INTERVAL)
@@ -87,6 +91,10 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
             except ScooterAuthenticationError as err:
                 await self.client.disconnect()
                 raise ConfigEntryAuthFailed(str(err)) from err
+            except ScooterConnectionCycleError as err:
+                self._schedule_disconnected_retry(started)
+                await self.client.disconnect()
+                raise UpdateFailed(str(err)) from err
             except (BleakError, ScooterProtocolError) as err:
                 self._consecutive_poll_failures += 1
                 if (
@@ -107,22 +115,30 @@ class DownGScooterCoordinator(DataUpdateCoordinator[ScooterData]):
                 await self.client.disconnect()
                 raise UpdateFailed(str(err)) from err
 
-    async def _async_keep_awake_if_due(self, data: ScooterData) -> None:
-        """Pulse the tail light once per minute while the scooter is parked."""
+    async def _async_cycle_connection_if_due(
+        self, connection_was_active: bool
+    ) -> None:
+        """Recreate the BLE session once per minute without dropping entity data."""
         now = monotonic()
-        if now - self._last_keep_awake < KEEP_AWAKE_INTERVAL:
+        if not connection_was_active:
+            self._last_connection_cycle = now
             return
-        if data.tail_light_mode is None:
-            return
-        if (
-            data.speed_kmh is not None
-            and data.speed_kmh > KEEP_AWAKE_MAX_SPEED_KMH
-        ):
+        if now - self._last_connection_cycle < CONNECTION_CYCLE_INTERVAL:
             return
 
-        await self.client.flash_tail_light(data.tail_light_mode, count=1)
-        self._last_keep_awake = monotonic()
-        _LOGGER.debug("Sent parked scooter keep-awake tail-light pulse")
+        self._last_connection_cycle = now
+        try:
+            self._resolve_ble_device()
+            await self.client.reconnect()
+        except ScooterAuthenticationError:
+            await self.client.disconnect()
+            raise
+        except (BleakError, ScooterProtocolError) as err:
+            await self.client.disconnect()
+            raise ScooterConnectionCycleError(
+                f"Scheduled BLE reconnection failed: {err}"
+            ) from err
+        _LOGGER.debug("Scooter BLE connection cycle completed")
 
     async def async_set_locked(self, locked: bool) -> None:
         """Set the software lock."""

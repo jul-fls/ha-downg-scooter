@@ -103,9 +103,8 @@ class AdvertisementModeTest(unittest.TestCase):
 
     def test_connected_and_disconnected_intervals(self) -> None:
         self.assertEqual(const.CONNECTED_POLL_INTERVAL, 10)
+        self.assertEqual(const.CONNECTION_CYCLE_INTERVAL, 60)
         self.assertEqual(const.DISCONNECTED_RETRY_INTERVAL, 60)
-        self.assertEqual(const.KEEP_AWAKE_INTERVAL, 60)
-        self.assertEqual(const.KEEP_AWAKE_MAX_SPEED_KMH, 0.1)
 
 
 class BmsStatusTest(unittest.TestCase):
@@ -117,24 +116,19 @@ class BmsStatusTest(unittest.TestCase):
 
 
 class PersistentConnectionTest(unittest.IsolatedAsyncioTestCase):
-    async def test_single_tail_light_pulse_restores_previous_mode(self) -> None:
+    async def test_reconnect_recreates_authenticated_transport(self) -> None:
         client = protocol.DownGScooterClient(object())
-        connect = AsyncMock()
-        ensure_transport = AsyncMock()
-        write = AsyncMock()
 
         with (
-            patch.object(client, "connect", connect),
-            patch.object(client, "_ensure_transport", ensure_transport),
-            patch.object(client, "_write_register_connected", write),
-            patch.object(protocol.asyncio, "sleep", AsyncMock()),
+            patch.object(client, "disconnect", AsyncMock()) as disconnect,
+            patch.object(client, "connect", AsyncMock()) as connect,
+            patch.object(client, "_ensure_transport", AsyncMock()) as transport,
         ):
-            await client.flash_tail_light("brake", count=1)
+            await client.reconnect()
 
-        self.assertEqual(
-            [call.args[2] for call in write.await_args_list],
-            [b"\x02\x00", b"\x00\x00", b"\x01\x00"],
-        )
+        disconnect.assert_awaited_once_with()
+        connect.assert_awaited_once_with()
+        transport.assert_awaited_once_with()
 
     async def test_transient_miauth_timeout_does_not_invalidate_token(self) -> None:
         client = protocol.DownGScooterClient(

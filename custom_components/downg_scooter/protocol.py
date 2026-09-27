@@ -180,6 +180,12 @@ class DownGScooterClient:
         self._rx_buffer.clear()
         self._recent_notifications.clear()
 
+    async def reconnect(self) -> None:
+        """Recreate and authenticate the GATT session."""
+        await self.disconnect()
+        await self.connect()
+        await self._ensure_transport()
+
     def set_device(self, device: BLEDevice | str) -> None:
         """Update the HA-selected local adapter or Bluetooth proxy device."""
         self._device = device

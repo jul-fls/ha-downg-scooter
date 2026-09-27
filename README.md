@@ -66,12 +66,12 @@ avoid having the phone connected at the same time. Pairing is timing-sensitive
 and may work more reliably with a local adapter.
 
 Once connected, the integration keeps the GATT and authenticated UART sessions
-open and polls all live telemetry and setting registers every 10 seconds. While
-the scooter is parked, it also pulses the rear light once per minute and then
-restores its configured mode to prevent the dashboard from entering its idle
-shutdown. If the link is lost, it releases the dead session and retries once
-per minute. After a successful reconnection, polling automatically returns to
-10 seconds.
+open and polls all live telemetry and setting registers every 10 seconds. It
+also deliberately recreates and reauthenticates the BLE session once per minute
+to test whether connection activity resets the dashboard's firmware-controlled
+idle timer. Entity values remain available during a successful connection
+cycle; a failed reconnection marks them unavailable and switches to one-minute
+retries. After a successful reconnection, polling returns to 10 seconds.
 
 Use the included Windows diagnostic to separate scooter/protocol failures from
 proxy failures:
@@ -130,7 +130,7 @@ The repository follows the CI, versioning, documentation, and HACS layout of
 .\scripts\setup_dev.ps1
 .\.venv\Scripts\pyright.exe
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-$env:RELEASE_TAG = "v1.1.4"
+$env:RELEASE_TAG = "v1.2.0"
 .\.venv\Scripts\python.exe scripts\check_version.py
 ```
 
